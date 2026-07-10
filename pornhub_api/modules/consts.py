@@ -95,7 +95,7 @@ def get_m3u8_urls(media_definitions: dict) -> dict:
     return quality_urls
 
 def extractor_gifs(html_content: str) -> list:
-    links = []
+    unique_urls = set()
     lexbor = LexborHTMLParser(html_content)
     # Try multiple possible containers for GIFs
     containers = [
@@ -114,10 +114,10 @@ def extractor_gifs(html_content: str) -> list:
         # Ensure it's a GIF link (usually /gif/ followed by digits) and not a duplicate
         if href.startswith("/gif/") and any(char.isdigit() for char in href):
             full_url = f"https://www.pornhub.com{href}"
-            links.append({"url": full_url})
+            unique_urls.add(full_url)
 
-    logger.debug(f"extractor_gifs extracted {len(links)} links")
-    return list(set(links))
+    links = [{"url": url} for url in unique_urls]
+    return links
 
 
 def extractor_model(html_content: str) -> list:
@@ -215,7 +215,7 @@ def extractor_hubtraffic(json_content: str) -> list:
 
 
 def extractor_videos_from_playlist_page(html_content: str) -> list:
-    links = []
+    unique_urls = set()
     lexbor = LexborHTMLParser(html_content)
     
     # Search for all 'a' tags with an href containing "/view_video.php?viewkey="
@@ -225,15 +225,16 @@ def extractor_videos_from_playlist_page(html_content: str) -> list:
         if href:
             # Ensure the URL is absolute
             if not href.startswith("https://www.pornhub.com"):
-                links.append({"url": f"https://www.pornhub.com{href}"})
+                unique_urls.add(f"https://www.pornhub.com{href}")
             else:
-                links.append({"url": href})
-    logger.debug(f"extractor_videos_from_playlist_page extracted {len(links)} links")
-    return list(set(links))
+                unique_urls.add(href)
+
+    links = [{"url": url} for url in unique_urls]
+    return links
 
 
 def extractor_videos_playlist(content: str) -> list:
-    links = []
+    unique_urls = set()
     html_to_parse = None
 
     try:
@@ -254,12 +255,12 @@ def extractor_videos_playlist(content: str) -> list:
             href = a_tag.attributes.get("href")
             if href:
                 if not href.startswith("https://www.pornhub.com"):
-                    links.append({"url": f"https://www.pornhub.com{href}"})
+                    unique_urls.add(f"https://www.pornhub.com{href}")
                 else:
-                    links.append({"url": href})
+                    unique_urls.add(href)
 
-    logger.debug(f"extractor_videos_playlist extracted {len(links)} links")
-    return list(set(links))
+    links = [{"url": url} for url in unique_urls]
+    return links
 
 
 def extractor_users(html_content: str) -> list:
@@ -267,13 +268,13 @@ def extractor_users(html_content: str) -> list:
     Extractor for users, models and pornstars.
     """
     lexbor = LexborHTMLParser(html_content)
-    users = []
+    unique_urls = set()
     # Matches the user links in the subscriptions/followers pages
     for a_tag in lexbor.css("a.userLink[href]"):
         href = a_tag.attributes.get("href")
         if href.startswith("/"):
             url = f"https://www.pornhub.com{href}"
-            users.append({"url": url})
+            unique_urls.add(url)
 
-    logger.debug(f"extractor_users extracted {len(users)} users")
-    return list(set(users))
+    links = [{"url": url} for url in unique_urls]
+    return links

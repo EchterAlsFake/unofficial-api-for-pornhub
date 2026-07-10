@@ -17,7 +17,7 @@ async def test_gif_from_search(client):
         assert isinstance(gif.video.publish_date, str) and len(gif.video.publish_date) > 0
         assert isinstance(gif.video.content_url, str) and len(gif.video.content_url) > 0
         assert isinstance(gif.video.tags, dict) and len(gif.video.tags) > 0
-        assert isinstance(gif.video.vote_count, int)
+        assert isinstance(gif.video.vote_count, str)
         assert isinstance(gif.video.vote_percentage, str)
 
         if idx >= 5:

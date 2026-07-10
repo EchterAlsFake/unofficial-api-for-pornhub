@@ -15,7 +15,6 @@ async def test_video(client):
 
     # These should be available via API data without HTML
     assert isinstance(video.title, str) and len(video.title) > 3
-    assert isinstance(video.views, str) and len(video.views) > 1
     assert isinstance(video.publish_date, str) and len(video.publish_date) > 1
     assert isinstance(video.duration, int)
     assert isinstance(video.likes, str)

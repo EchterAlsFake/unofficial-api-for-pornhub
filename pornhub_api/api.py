@@ -204,7 +204,7 @@ class Pornstar(UserHelper):
                        on_video_error: on_error_hint = on_error, on_page_error: on_error_hint = None,
                        keep_original_order: bool = False,
                        load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
-        helper = Helper(core=self.core, constructor=Short)
+        helper = Helper(core=self.core, constructor=GIF)
         page_urls = [f"{self.url}/gifs/video?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
@@ -349,7 +349,7 @@ class Short(BaseMedia):
     is_hd: bool | None = None
     embed_url: str | None = None
     thumbnail: str | None = None
-    media_definition: dict | None = None
+    media_definitions: dict | None = None
     comment_count: str | None = None
     avatar: str | None = None
     author_name: str | None = None
@@ -372,7 +372,7 @@ class Short(BaseMedia):
                 setattr(self, key, value)
 
     @staticmethod
-    async def _extract_metadata(html_content: str) -> dict:
+    def _extract_html(html_content: str) -> dict:
         logger.debug("Extracting metadata from Short HTML...")
         parser = LexborHTMLParser(html_content)
 
@@ -380,8 +380,8 @@ class Short(BaseMedia):
         metadata = {}
 
         for script in scripts:
-            if "JSON_SHORTIES" in script.text:
-                stuff = re.search(r'JSON_SHORTIES = insertAfterNthPosition\((.*?), prerollObject', script.text, re.DOTALL).group(1)
+            if "JSON_SHORTIES" in script.text():
+                stuff = re.search(r'JSON_SHORTIES = insertAfterNthPosition\((.*?), prerollObject', script.text(), re.DOTALL).group(1)
                 assert isinstance(stuff, str)
                 script = chompjs.parse_js_object(stuff)
                 metadata = script[0]
@@ -401,9 +401,8 @@ class Short(BaseMedia):
         author_name = metadata.get("name")
         author_link = metadata.get("profileUrl")
         video_url = metadata.get("linkUrl")
-
         playlist_lines = ['#EXTM3U']
-        for (width, height), uri in get_m3u8_urls.items():
+        for (width, height), uri in get_m3u8_urls(media_definitions).items():
             playlist_lines.append(f'#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION={width}x{height}')
             playlist_lines.append(uri)
 
@@ -484,7 +483,7 @@ class GIF(BaseMedia):
             raise VideoDisabled("The Video has been disabled, I can not fetch any data from it.")
 
         data: dict = await asyncio.to_thread(self._extract_html, html_content)
-        allowed_fields = {f.name for f in fields(self)}
+        allowed_fields = [f.name for f in fields(self)]
 
         for key, value in data.items():
             if key in allowed_fields:
@@ -1332,7 +1331,8 @@ class Client:
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
         pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
         assert videos_concurrency and pages_concurrency
-        async for result in self.helper.iterator(target_page_urls=page_urls, max_video_concurrency=videos_concurrency,
+        helper = Helper(core=self.core, constructor=GIF)
+        async for result in helper.iterator(target_page_urls=page_urls, max_video_concurrency=videos_concurrency,
                                     max_page_concurrency=pages_concurrency, video_link_extractor=extractor_gifs,
                                     on_video_error=on_video_error, on_page_error=on_page_error,
                                     keep_original_order=keep_original_order, fetch_html=load_html):
@@ -1553,5 +1553,3 @@ def cli():
 
 if __name__ == "__main__":
     asyncio.run(run_main())
-
-
