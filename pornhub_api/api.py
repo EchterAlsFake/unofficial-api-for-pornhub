@@ -152,9 +152,8 @@ class UserHelper(BaseMedia):
                          on_video_error: on_error_hint = on_error,
                          keep_original_order: bool = False, load_html: bool = False, load_api: bool = True,
                          on_page_error: on_error_hint = None) -> AsyncGenerator[ScrapeResult, None]:
-        url = self.url
         helper = Helper(core=self.core, constructor=Video)
-        page_urls = [f"{url}/videos?page={page}" for page in range(1, pages + 1)]
+        page_urls = [f"{self.url.rstrip('/')}videos?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
         pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
@@ -175,7 +174,7 @@ class SubscriptionHelper(Helper):
                                 keep_original_order: bool = False
                                 ) -> AsyncGenerator[User, None]:
         helper = Helper(core=self.core, constructor=User)
-        page_urls = [f"{url}?page={page}" for page in range(1, pages + 1)]
+        page_urls = [f"{url.rstrip('/')}?page={page}" for page in range(1, pages + 1)]
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
         pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
         assert videos_concurrency and pages_concurrency
@@ -194,9 +193,8 @@ class Pornstar(UserHelper):
                           on_video_error: on_error_hint = on_error, on_page_error: on_error_hint = None,
                           keep_original_order: bool = False,
                           load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
-        url = self.url
         helper = Helper(core=self.core, constructor=Video)
-        page_urls = [f"{url}/videos/upload?page={page}" for page in range(1, pages + 1)]
+        page_urls = [f"{self.url.rstrip('/')}/videos/upload?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
         pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
@@ -212,9 +210,8 @@ class Pornstar(UserHelper):
                        on_video_error: on_error_hint = on_error, on_page_error: on_error_hint = None,
                        keep_original_order: bool = False,
                        load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
-        url = self.url
         helper = Helper(core=self.core, constructor=GIF)
-        page_urls = [f"{url}/gifs/video?page={page}" for page in range(1, pages + 1)]
+        page_urls = [f"{self.url.rstrip('/')}/gifs/video?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
         pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
@@ -324,7 +321,7 @@ class Album(BaseMedia):
 
     async def get_photos(self, pages: int ) -> AsyncGenerator[dict, None]:
         logger.info(f"Fetching photos for Album at {self.url} (pages: {pages})")
-        page_urls = [f"{self.url}?page={page}" for page in range(1, pages + 1)]
+        page_urls = [f"{self.url.rstrip('/')}?page={page}" for page in range(1, pages + 1)]
         html_contents = [asyncio.create_task(get_html_content(core=self.core, url=url)) for url in page_urls]
         html_contents = await asyncio.gather(*html_contents)
 
@@ -634,7 +631,7 @@ class Channel(BaseMedia):
                          load_html: bool = False, load_api: bool = True, keep_original_order: bool = False
                          ) -> AsyncGenerator[ScrapeResult, None]:
         helper = Helper(core=self.core, constructor=Video)
-        page_urls = [f"{self.url}videos?page={page}" for page in range(1, pages + 1)]
+        page_urls = [f"{self.url.rstrip('/')}/videos?page={page}" for page in range(1, pages + 1)]
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
         pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
         assert videos_concurrency and pages_concurrency
@@ -1562,5 +1559,16 @@ def cli():
     asyncio.run(run_main())
 
 
+async def xd():
+    core = BaseCore()
+    core.enable_logging(level=logging.DEBUG)
+    client = Client(core, email="ngrokphishing@gmail.com", password='KIKikk12!"')
+    await client.login(force=True)
+
+    async for video in client.get_history():
+        print(video.video.title)
+
+
+
 if __name__ == "__main__":
-    asyncio.run(run_main())
+    asyncio.run(xd())

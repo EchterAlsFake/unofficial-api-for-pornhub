@@ -185,15 +185,29 @@ wheels = [
 
 [[package]]
 name = "eaf-base-api"
-version = "3.3.2"
-source = { registry = "https://pypi.org/simple" }
+version = "3.3.3"
+source = { editable = "../eaf_base_api" }
 dependencies = [
     { name = "curl-cffi" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/7a/1bfa4b6904ed2dd2a8d60a7a2c3469d696e4312c754d924b075952e15b6d/eaf_base_api-3.3.2.tar.gz", hash = "sha256:241003c3795f24d4800c4019fbc53e7cb1afebfc9f03bfcedf65a452acb55b80", size = 37763, upload-time = "2026-06-22T09:36:27.082Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/de/be75e76677b26bfde4fa515a37fecb738f64a129561a0762652c7df51035/eaf_base_api-3.3.2-py3-none-any.whl", hash = "sha256:bc60f5f948cc2a535a845e0c9b31f4d3dcebbad53c2f576f4d1396007973898c", size = 40805, upload-time = "2026-06-22T09:36:25.705Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "av", marker = "python_full_version >= '3.12' and extra == 'hls'" },
+    { name = "curl-cffi" },
+    { name = "m3u8", marker = "extra == 'hls'" },
+    { name = "tenacity", specifier = ">=9.1.2" },
+]
+provides-extras = ["hls"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy" },
+    { name = "pylint" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "types-m3u8" },
 ]
 
 [[package]]
@@ -330,7 +344,7 @@ av = [
 requires-dist = [
     { name = "av", marker = "extra == 'av'" },
     { name = "chompjs" },
-    { name = "eaf-base-api" },
+    { name = "eaf-base-api", editable = "../eaf_base_api" },
     { name = "m3u8" },
     { name = "selectolax" },
 ]
