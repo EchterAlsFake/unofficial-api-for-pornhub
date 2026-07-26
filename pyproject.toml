@@ -51,7 +51,7 @@ av = ["av"]
 phub = "pornhub_api.api:cli"
 
 [project.urls]
-Documentation = "https://github.com/EchterAlsFake/API_Docs/blob/master/Porn_APIs/PHUB.md"
+Documentation = "https://docs.echteralsfake.me/pornhub"
 Repository = "https://github.com/EchterAlsFake/unofficial-api-for-pornhub"
 "Bug Tracker" = "https://github.com/EchterAlsFake/unofficial-api-for-pornhub/issues"
 "Support me on Ko-Fi" = "https://ko-fi.com/EchterAlsFake"
