@@ -1559,16 +1559,5 @@ def cli():
     asyncio.run(run_main())
 
 
-async def xd():
-    core = BaseCore()
-    core.enable_logging(level=logging.DEBUG)
-    client = Client(core, email="ngrokphishing@gmail.com", password='KIKikk12!"')
-    await client.login(force=True)
-
-    async for video in client.get_history():
-        print(video.video.title)
-
-
-
 if __name__ == "__main__":
     asyncio.run(xd())
