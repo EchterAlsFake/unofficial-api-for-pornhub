@@ -4,7 +4,7 @@
 <div align="center">
     <a href="https://pepy.tech/project/phub"><img src="https://static.pepy.tech/badge/phub" alt="Downloads"></a> +
     <a href="https://pepy.tech/project/unofficial-api-for-pornhub"><img src="https://static.pepy.tech/badge/unofficial-api-for-pornhub" alt="Downloads"></a>
-    <a href="https://badge.fury.io/py/phub"><img src="https://badge.fury.io/py/phub.svg" alt="PyPI version" height="18"></a>
+    <a href="https://badge.fury.io/py/unofficial-api-for-pornhub"><img src="https://badge.fury.io/py/unofficial-api-for-pornhub.svg" alt="PyPI version" height="18"></a>
     <a href="https://echteralsfake.me/ci/unofficial-api-for-pornhub/badge.svg"><img src="https://echteralsfake.me/ci/unofficial-api-for-pornhub/badge.svg" alt="API Tests"/></a>
     </div>
 
