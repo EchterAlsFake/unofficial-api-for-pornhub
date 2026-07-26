@@ -11,7 +11,7 @@ authors = [
   {name = "EchterAlsFake", email = "EchterAlsFake@proton.me"}
 ]
 requires-python = ">=3.12"
-license = "LGPL-3.0-only"
+license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 keywords = [
     "api",
@@ -29,7 +29,7 @@ keywords = [
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",

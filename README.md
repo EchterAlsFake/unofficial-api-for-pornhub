@@ -5,7 +5,7 @@
     <a href="https://pepy.tech/project/phub"><img src="https://static.pepy.tech/badge/phub" alt="Downloads"></a> +
     <a href="https://pepy.tech/project/unofficial-api-for-pornhub"><img src="https://static.pepy.tech/badge/unofficial-api-for-pornhub" alt="Downloads"></a>
     <a href="https://badge.fury.io/py/phub"><img src="https://badge.fury.io/py/phub.svg" alt="PyPI version" height="18"></a>
-    <a href="https://echteralsfake.me/ci/PHUB/badge.svg"><img src="https://echteralsfake.me/ci/PHUB/badge.svg" alt="API Tests"/></a>
+    <a href="https://echteralsfake.me/ci/unofficial-api-for-pornhub/badge.svg"><img src="https://echteralsfake.me/ci/unofficial-api-for-pornhub/badge.svg" alt="API Tests"/></a>
     </div>
 
 # Disclaimer
@@ -65,9 +65,6 @@ This API has been tested and confirmed working on:
 
 # Installation
 
-> [!WARNING]
-> The installation from Git is **temporary**. The package will be migrated to PyPI within the next week.
-
 ```bash
 pip install unofficial-api-for-pornhub
 ```
@@ -76,7 +73,7 @@ pip install unofficial-api-for-pornhub
 
 # Quickstart
 
-### Have a look at the [Documentation](https://github.com/EchterAlsFake/API_Docs/blob/master/Porn_APIs/PHUB.md) for more details
+### Have a look at the [Documentation](https://docs.echteralsfake.me/pornhub) for more details
 
 > [!NOTE]
 > PornHub API can also be used from the command line. Do: pornhub_api -h to see the options
@@ -129,7 +126,15 @@ in the discussions.
 Pull requests are also welcome.
 
 # License
-PHUB uses LGPLv3. See the `LICENSE` file.
+This API is licensed under the AGPLv3. See the `LICENSE` file for details.
+
+> [!CAUTION]
+> **Using this in a proprietary application?**
+> Under the AGPLv3, if you integrate, modify, or host this API as part of your application (even over a network), you must open-source your entire application's code under the AGPL. 
+>
+> If you want to use this API without open-sourcing your own code, you must purchase a commercial license.
+> 
+> **For commercial licensing, contact:** EchterAlsFakeBS@proton.me
 
 This repository was initiated and maintained by [Egsagon](https://github.com/Egsagon)
 He doesn't have any time to maintain this and transferred me the ownership.
