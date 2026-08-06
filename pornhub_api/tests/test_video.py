@@ -11,7 +11,7 @@ def client():
 async def test_video(client):
     client = Client()
     # By default this uses HubTraffic API
-    video = await client.get_video("https://www.pornhub.com/view_video.php?viewkey=ph61d5d646249b2", load_api=True, load_html=True)
+    video = await client.get_video("https://www.pornhub.com/view_video.php?viewkey=ph618ed49fbee04", load_api=True, load_html=True)
 
     # These should be available via API data without HTML
     assert isinstance(video.title, str) and len(video.title) > 3

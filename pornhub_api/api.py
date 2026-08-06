@@ -818,7 +818,6 @@ class Video(BaseMedia):
     def _extract_html(html_content: str) -> dict:
         logger.debug("Extracting info from Video HTML...")
         parser = LexborHTMLParser(html_content)
-
         match = REGEX_VIDEO_FLASHVARS.search(html_content).group(1)
         flashvars = json.loads(match, strict=False)
         is_vr = False if flashvars["isVR"] == 0 else True
@@ -950,21 +949,21 @@ class Video(BaseMedia):
         }
 
     @property
-    async def author(self) -> Pornstar | Channel | Model | None:
+    async def author(self, load_html: bool = True) -> Pornstar | Channel | Model | None:
         if "pornstar" in self.author_link:
             pornstar = Pornstar(core=self.core, url=self.author_link)
-            return await pornstar.init()
+            return await pornstar.load(html=load_html)
 
         elif "model" in self.author_link:
             model = Model(core=self.core, url=self.author_link)
-            return await model.init()
+            return await model.load(html=load_html)
 
         elif "channel" in self.author_link:
             channel = Channel(core=self.core, url=self.author_link)
-            return await channel.init()
+            return await channel.load(html=load_html)
 
         else:
-            None
+            return None
 
     async def download(self, configuration: DownloadConfigHLS) -> bool | DownloadReport:
         """
@@ -1558,6 +1557,5 @@ async def run_main():
 def cli():
     asyncio.run(run_main())
 
-
 if __name__ == "__main__":
-    asyncio.run(xd())
+    asyncio.run(run_main())

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "unofficial-api-for-pornhub"
-version = "5.3"
+version = "5.3.1"
 description = "An asynchronous API wrapper and scraper for Pornhub"
 authors = [
   {name = 'Egsagon', email = "egsagon.git@gmail.com"},
