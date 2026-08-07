@@ -23,10 +23,9 @@ async def test_playlist(client):
     assert isinstance(await playlist.get_author(), User)
 
     idx = 0
-    async for video in playlist.get_videos():
+    async for result in playlist.get_videos():
         idx += 1
-        assert isinstance(video.video.title, str)
+        assert isinstance(result.unwrap().title, str)
 
         if idx == 5:
             break
-

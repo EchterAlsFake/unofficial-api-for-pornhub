@@ -41,7 +41,8 @@ dependencies = [
   "m3u8",
   "chompjs",
   "selectolax",
-  "eaf-base-api",
+  "eaf-base-api>=4.0.0",
+  "curl-cffi",
 ]
 
 [project.optional-dependencies]
@@ -61,3 +62,6 @@ Repository = "https://github.com/EchterAlsFake/unofficial-api-for-pornhub"
 [tool.uv.build-backend]
 module-name = "pornhub_api"
 module-root = ""
+
+[tool.uv.sources]
+eaf-base-api = { path = "../eaf_base_api", editable = true }

@@ -112,7 +112,7 @@ def extractor_gifs(html_content: str) -> list:
     for a_tag in main_div.css("a[href]"):
         href = a_tag.attributes.get("href")
         # Ensure it's a GIF link (usually /gif/ followed by digits) and not a duplicate
-        if href.startswith("/gif/") and any(char.isdigit() for char in href):
+        if isinstance(href, str) and href.startswith("/gif/") and any(char.isdigit() for char in href):
             full_url = f"https://www.pornhub.com{href}"
             unique_urls.add(full_url)
 
@@ -128,6 +128,8 @@ def extractor_model(html_content: str) -> list:
     video_keys = [key.attributes.get("data-video-vkey") for key in soup1.css("[data-video-vkey]")]
 
     for key in video_keys:
+        if not isinstance(key, str) or not key:
+            continue
         urls.append({"url": f"https://www.pornhub.com/view_video.php?viewkey={key}"})
 
     logger.debug(f"extractor_model extracted {len(urls)} urls")
@@ -146,6 +148,8 @@ def extractor_videos(html_content: str) -> list:
         a_tags = lexbor.css('a[href^="/view_video.php?viewkey="]')
         for a_tag in a_tags:
             href = a_tag.attributes.get("href")
+            if not isinstance(href, str) or not href:
+                continue
             url = f"https://www.pornhub.com{href}"
             if any(r["url"] == url for r in results):
                 continue
@@ -186,8 +190,7 @@ def extractor_videos(html_content: str) -> list:
                 "url": url,
                 "title": title,
                 "duration": duration,
-                "thumb": thumb,
-                "from_search": True
+                "thumbnail": thumb,
             })
         except Exception:
             continue
@@ -235,7 +238,7 @@ def extractor_users(html_content: str) -> list:
     # Matches the user links in the subscriptions/followers pages
     for a_tag in lexbor.css("a.userLink[href]"):
         href = a_tag.attributes.get("href")
-        if href.startswith("/"):
+        if isinstance(href, str) and href.startswith("/"):
             url = f"https://www.pornhub.com{href}"
             unique_urls.add(url)
 
