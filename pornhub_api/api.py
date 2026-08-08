@@ -33,18 +33,17 @@ from selectolax.lexbor import LexborHTMLParser
 from concurrent.futures import ProcessPoolExecutor
 from typing import AsyncGenerator, Any, ClassVar, Literal
 from base_api.modules.type_hints import DownloadReport
+from base_api.modules.config import IteratorConfig
 from base_api import (
     BaseCore,
     BaseMedia,
     DownloadConfigHLS,
     DownloadConfigRAW,
     ErrorAction,
-    ErrorHandler,
     ErrorMode,
     Helper,
     MediaLoadError,
     MediaLoadErrors,
-    ResultOrder,
     RetryPolicy,
     ScrapeErrorContext,
     ScrapeResult,
@@ -73,6 +72,24 @@ logger.addHandler(logging.NullHandler())
 HELPER_RETRY = RetryPolicy(max_attempts=4, base_delay=0.5, max_delay=8.0)
 
 
+def make_iterator_config(
+    load_specific_sources: tuple[str, ...] = ("api", "html"),
+    *,
+    max_item_concurrency: int | None = None,
+    max_page_concurrency: int | None = None,
+) -> IteratorConfig:
+    return IteratorConfig(
+        max_item_concurrency=max_item_concurrency,
+        max_page_concurrency=max_page_concurrency,
+        load_specific_sources=load_specific_sources,
+        item_retry=HELPER_RETRY,
+        page_retry=HELPER_RETRY,
+        page_error_mode=ErrorMode.SKIP,
+        item_error_handler=None,
+        page_error_handler=None,
+    )
+
+
 def _is_resource_gone(error: BaseException) -> bool:
     if isinstance(error, ResourceGone):
         return True
@@ -86,7 +103,7 @@ def _is_resource_gone(error: BaseException) -> bool:
 def _requested_sources(*, html: bool = False, api: bool = False) -> tuple[str, ...]:
     return tuple(
         source
-        for source, enabled in (("html", html), ("api", api))
+        for source, enabled in (("api", api), ("html", html))
         if enabled
     )
 
@@ -112,26 +129,19 @@ def _scrape_stream(
     constructor: Any,
     target_page_urls: list[str],
     item_extractor: Any,
-    videos_concurrency: int,
-    pages_concurrency: int,
-    on_video_error: ErrorHandler | None,
-    on_page_error: ErrorHandler | None,
-    keep_original_order: bool = False,
-    load_html: bool = False,
-    load_api: bool = False,
+    iterator_config: IteratorConfig | None = None,
 ):
+    if iterator_config is None:
+        loader_methods = getattr(constructor, "loader_methods", {})
+        sources = tuple(
+            source for source in ("api", "html") if source in loader_methods
+        )
+        iterator_config = make_iterator_config(sources)
+
     return Helper(core=core, constructor=constructor).iterator(
         target_page_urls=target_page_urls,
         item_extractor=item_extractor,
-        max_item_concurrency=videos_concurrency,
-        max_page_concurrency=pages_concurrency,
-        item_error_handler=on_video_error,
-        page_error_handler=on_page_error,
-        item_retry=HELPER_RETRY,
-        page_retry=HELPER_RETRY,
-        page_error_mode=ErrorMode.SKIP,
-        order=ResultOrder.ORIGINAL if keep_original_order else ResultOrder.COMPLETION,
-        load_sources=_requested_sources(html=load_html, api=load_api),
+        iterator_config=iterator_config,
     )
 
 
@@ -217,21 +227,16 @@ class UserHelper(BaseMedia):
             "info": info
         }
 
-    async def get_videos(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                         on_video_error: ErrorHandler | None = on_error,
-                         keep_original_order: bool = False, load_html: bool = False, load_api: bool = True,
-                         on_page_error: ErrorHandler | None = None) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_videos(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         page_urls = [f"{self.url.rstrip('/')}videos?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_model, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_model, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
@@ -240,22 +245,16 @@ class UserHelper(BaseMedia):
 
 class SubscriptionHelper(Helper):
 
-    async def get_subscriptions(self, url: str, pages: int = 5, pages_concurrency: int | None = None,
-                                videos_concurrency: int | None = None,
-                                on_video_error: ErrorHandler | None = on_error,
-                                on_page_error: ErrorHandler | None = None,
-                                keep_original_order: bool = False
-                                ) -> AsyncGenerator[ScrapeResult[User], None]:
+    async def get_subscriptions(
+        self,
+        url: str,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult[User], None]:
         page_urls = [f"{url.rstrip('/')}?page={page}" for page in range(1, pages + 1)]
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=User, target_page_urls=page_urls,
-            item_extractor=extractor_users, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=True,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_users, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
@@ -265,42 +264,32 @@ class SubscriptionHelper(Helper):
 @dataclass(kw_only=True, slots=True)
 class Pornstar(UserHelper):
 
-    async def get_uploads(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                          on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                          keep_original_order: bool = False,
-                          load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_uploads(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         page_urls = [f"{self.url.rstrip('/')}/videos/upload?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
                 yield result
 
 
-    async def get_gifs(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                       on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                       keep_original_order: bool = False,
-                       load_html: bool = False) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_gifs(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         page_urls = [f"{self.url.rstrip('/')}/gifs/video?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=GIF, target_page_urls=page_urls,
-            item_extractor=extractor_gifs, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_gifs, iterator_config=iterator_config,
         )
         async with stream:
             async for scrape_result in stream:
@@ -686,20 +675,15 @@ class Channel(BaseMedia):
             "user_link": user_link,
         }
 
-    async def get_videos(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                         on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                         load_html: bool = False, load_api: bool = True, keep_original_order: bool = False
-                         ) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_videos(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         page_urls = [f"{self.url.rstrip('/')}/videos?page={page}" for page in range(1, pages + 1)]
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
@@ -780,13 +764,12 @@ class Playlist(BaseMedia):
             "tags": tags,
         }
 
-    async def get_videos(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                         on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_videos(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         # I will not optimize this function because I am too lazy to handle this one edge case here
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
-
         await self.load_fields("playlist_id", "token")
         chunked_page_urls = [
             f'https://www.pornhub.com/playlist/viewChunked?id={self.playlist_id}&token={self.token}&page={page}'
@@ -796,9 +779,7 @@ class Playlist(BaseMedia):
         if chunked_page_urls:
             stream = _scrape_stream(
                 core=self.core, constructor=Video, target_page_urls=chunked_page_urls,
-                item_extractor=extractor_videos_playlist, videos_concurrency=videos_concurrency,
-                pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-                on_page_error=on_page_error, load_html=True, load_api=True,
+                item_extractor=extractor_videos_playlist, iterator_config=iterator_config,
             )
             async with stream:
                 async for result in stream:
@@ -822,24 +803,24 @@ class Video(BaseMedia):
     is_vr: bool | None = media_field("html")
     is_video_unavailable: bool | None = media_field("html")
     is_hd: bool | None = media_field("html")
-    duration: int | None = media_field("html", "api")
-    title: str | None = media_field("html", "api")
-    thumbnail: str | None = media_field("html", "api")
+    duration: int | None = media_field("api", "html")
+    title: str | None = media_field("api", "html")
+    thumbnail: str | None = media_field("api", "html")
     available_qualities: list[int] | None = media_field("html")
     is_vertical: bool | None = media_field("html")
     is_video_unavailable_in_your_country: bool | None = media_field("html")
 
     # HTML Scraped fields
-    views: str | None = media_field("html", "api")
-    publish_date: str | None = media_field("html", "api")
-    likes: str | None = media_field("html", "api")
+    views: str | None = media_field("api", "html")
+    publish_date: str | None = media_field("api", "html")
+    likes: str | None = media_field("api", "html")
 
     # Playlist URL
     m3u8_base_url: str | None = media_field("html")
 
     # Categorization maps
-    categories: list[str] | None = media_field("html", "api")
-    tags: list[str] | None = media_field("html", "api")
+    categories: list[str] | None = media_field("api", "html")
+    tags: list[str] | None = media_field("api", "html")
     rating_percent: str | float | None = media_field("api")
 
     # Author details
@@ -848,8 +829,8 @@ class Video(BaseMedia):
     author_information: dict[str, Any] | None = media_field("html")
 
     loader_methods: ClassVar[dict[str, str]] = {
-        "html": "_load_html",
         "api": "_load_api",
+        "html": "_load_html",
     }
 
     def __post_init__(self) -> None:
@@ -1056,24 +1037,45 @@ class Account:
             url = f"https://www.pornhub.com/users/{self.name}"
             self.user = User(url=url, core=self.client.core)
 
-    async def get_recommended(self, pages: int = 5, load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
-        async for result in self.client.get_recommended(pages=pages, load_html=load_html, load_api=load_api):
+    async def get_recommended(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
+        async for result in self.client.get_recommended(pages=pages, iterator_config=iterator_config):
             yield result
 
-    async def get_history(self, pages: int = 5, load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
-        async for result in self.client.get_history(pages=pages, load_html=load_html, load_api=load_api):
+    async def get_history(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
+        async for result in self.client.get_history(pages=pages, iterator_config=iterator_config):
             yield result
 
-    async def get_favorites(self, pages: int = 5, load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
-        async for result in self.client.get_favorites(pages=pages, load_html=load_html, load_api=load_api):
+    async def get_favorites(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
+        async for result in self.client.get_favorites(pages=pages, iterator_config=iterator_config):
             yield result
 
-    async def get_feed(self, section: str = 'videos', pages: int = 5, load_html: bool = False, load_api: bool = True) -> AsyncGenerator[ScrapeResult, None]:
-        async for result in self.client.get_feed(section=section, pages=pages, load_html=load_html, load_api=load_api):
+    async def get_feed(
+        self,
+        section: str = "videos",
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
+        async for result in self.client.get_feed(section=section, pages=pages, iterator_config=iterator_config):
             yield result
 
-    async def get_subscriptions(self, pages: int = 5) -> AsyncGenerator[ScrapeResult[User], None]:
-        async for result in self.client.get_subscriptions(pages=pages):
+    async def get_subscriptions(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult[User], None]:
+        async for result in self.client.get_subscriptions(pages=pages, iterator_config=iterator_config):
             yield result
 
     def __repr__(self) -> str:
@@ -1175,10 +1177,11 @@ class Client:
         except Exception:
             return False
 
-    async def get_recommended(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                              on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                              load_html: bool = False, load_api: bool = True,
-                              keep_original_order: bool = False) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_recommended(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         """
         Get recommended videos for the logged-in account.
         """
@@ -1187,24 +1190,19 @@ class Client:
         base_url = f"{HOST}recommended"
         page_urls = [f"{base_url}?page={page}" for page in range(1, pages + 1)]
 
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
                 yield result
 
-    async def get_history(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                          on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                          load_html: bool = False, load_api: bool = True,
-                          keep_original_order: bool = False) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_history(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         """
         Get watch history for the logged-in account.
         """
@@ -1214,24 +1212,19 @@ class Client:
         base_url = f"{HOST}users/{self.account.name}/videos/recent"
         page_urls = [f"{base_url}?page={page}" for page in range(1, pages + 1)]
 
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
                 yield result
 
-    async def get_favorites(self, pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                            on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                            load_html: bool = False, load_api: bool = True,
-                            keep_original_order: bool = False) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_favorites(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         """
         Get favorite videos for the logged-in account.
         """
@@ -1241,35 +1234,24 @@ class Client:
         base_url = f"{HOST}users/{self.account.name}/videos/favorites"
         page_urls = [f"{base_url}?page={page}" for page in range(1, pages + 1)]
 
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
-
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
                 yield result
 
-    async def get_feed(self, section: str = 'videos', pages: int = 5, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
-                       on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                       load_html: bool = False, load_api: bool = True,
-                       keep_original_order: bool = False) -> AsyncGenerator[ScrapeResult, None]:
+    async def get_feed(
+        self,
+        section: str = "videos",
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult, None]:
         """
         Get the account feed.
-        :param load_api:
-        :param load_html:
-        :param keep_original_order:
-        :param pages_concurrency:
-        :param videos_concurrency:
+        :param iterator_config: Iterator concurrency, loading, ordering, and error behavior.
         :param section: Section to filter (videos, photos, posts, etc.)
-        :param on_video_error:
-        :param on_page_error:
         :param pages: Number of pages to fetch.
         """
         if not self.logged:
@@ -1278,23 +1260,19 @@ class Client:
         base_url = f"{HOST}feeds?section={section}"
         page_urls = [f"{base_url}&page={page}" for page in range(1, pages + 1)]
 
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
-
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
                 yield result
 
-    async def get_subscriptions(self, pages: int = 5, pages_concurrency: int | None = None, videos_concurrency: int | None = None,
-                                on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None) -> AsyncGenerator[ScrapeResult[User], None]:
+    async def get_subscriptions(
+        self,
+        pages: int = 5,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult[User], None]:
         """
         Get the account subscriptions.
         """
@@ -1303,11 +1281,11 @@ class Client:
 
         url = f"{HOST}users/{self.account.name}/subscriptions"
         helper = SubscriptionHelper(core=self.core, constructor=User)
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
-        async for user in helper.get_subscriptions(url=url, pages=pages, pages_concurrency=pages_concurrency, videos_concurrency=videos_concurrency,
-                                                   on_video_error=on_video_error, on_page_error=on_page_error):
+        async for user in helper.get_subscriptions(
+            url=url,
+            pages=pages,
+            iterator_config=iterator_config,
+        ):
             yield user
 
 
@@ -1400,16 +1378,14 @@ class Client:
     async def search_gifs(self, query: str, category: Literal["gay", "transgender"] | None = None,
                           search_filter: Literal["mr", "mv", "tr"] | None = None,
                           pages: int = 5,
-                          pages_concurrency: int | None = None, videos_concurrency: int | None = None,
-                          on_video_error: ErrorHandler | None = on_error, on_page_error: ErrorHandler | None = None,
-                          keep_original_order: bool = False, load_html: bool = True) -> AsyncGenerator[ScrapeResult, None]:
+                          iterator_config: IteratorConfig | None = None,
+                          ) -> AsyncGenerator[ScrapeResult, None]:
         """
         :param search_filter: [mr = Most Recent, mv = Most Viewed, tr = Top Rated] Default: Most relevant
         :param category: [gay, transgender] Default: Straight
         :param query:
         :param pages: Default: 5
-        :param videos_concurrency:
-        :param pages_concurrency:
+        :param iterator_config: Iterator concurrency, loading, ordering, and error behavior.
         :return:
         """
 
@@ -1423,15 +1399,9 @@ class Client:
             base_url += f"&o={search_filter}"
 
         page_urls = [f"{base_url}&page={page}" for page in range(1, pages + 1)]
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=GIF, target_page_urls=page_urls,
-            item_extractor=extractor_gifs, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_gifs, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
@@ -1442,11 +1412,7 @@ class Client:
                             duration_min: Literal["10", "20", "30"] | None = None,
                             duration_max: Literal["10", "20", "30"] | None = None,
                             pages: int = 5,
-                            videos_concurrency: int | None = None,
-                            pages_concurrency: int | None = None,
-                            on_video_error: ErrorHandler | None = on_error,
-                            on_page_error: ErrorHandler | None = None,
-                            keep_original_order: bool = False, load_html: bool = False, load_api: bool = True
+                            iterator_config: IteratorConfig | None = None,
                             ) -> AsyncGenerator[ScrapeResult, None]:
         base_url = f"https://www.pornhub.com/video/search?search={query}"
         if production_type:
@@ -1462,15 +1428,9 @@ class Client:
             base_url += f"&duration_max={duration_max}"
 
         page_urls = [f"{base_url}&page={page}" for page in range(1, pages + 1)]
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
@@ -1480,11 +1440,8 @@ class Client:
                                  category: str | None = None,
                                  sort_by: Literal["newest", "mostviewed", "rating"] | None = None,
                                  period: Literal["weekly", "monthly", "alltime"] | None = None,
-                                 pages: int = 5, on_video_error: ErrorHandler | None = on_error,
-                                 on_page_error: ErrorHandler | None = None, load_html: bool = False,
-                                 load_api: bool = True, keep_original_order: bool = False,
-                                 pages_concurrency: int = 5,
-                                 videos_concurrency: int = 20,
+                                 pages: int = 5,
+                                 iterator_config: IteratorConfig | None = None,
                                  ) -> AsyncGenerator[ScrapeResult, None]:
         """
         Search for videos using the HubTraffic API (Webmaster API).
@@ -1499,15 +1456,15 @@ class Client:
             base_url += f"&period={period}"
 
         page_urls = [f"{base_url}&page={page}" for page in range(1, pages + 1)]
-        videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
-        pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
-        assert videos_concurrency and pages_concurrency
+        if iterator_config is None:
+            iterator_config = make_iterator_config(
+                max_item_concurrency=20,
+                max_page_concurrency=5,
+            )
+
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, videos_concurrency=videos_concurrency,
-            pages_concurrency=pages_concurrency, on_video_error=on_video_error,
-            on_page_error=on_page_error, load_html=load_html, load_api=load_api,
-            keep_original_order=keep_original_order,
+            item_extractor=extractor_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:

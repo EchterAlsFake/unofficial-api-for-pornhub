@@ -10,7 +10,7 @@ def client():
 async def test_gif_from_search(client):
 
     idx = 0
-    async for result in client.search_gifs("fortnite", load_html=True):
+    async for result in client.search_gifs("fortnite"):
         gif = result.unwrap()
         idx += 1
         assert isinstance(gif.title, str) and len(gif.title) > 0
@@ -27,7 +27,7 @@ async def test_gif_from_search(client):
 @pytest.mark.asyncio
 async def test_search(client):
     idx = 0
-    async for result in client.search_videos("fortnite", load_html=False, load_api=True):
+    async for result in client.search_videos("fortnite"):
         video = result.unwrap()
         idx += 1
         assert isinstance(video.title, str) and len(video.title) > 0
