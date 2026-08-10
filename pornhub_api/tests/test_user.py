@@ -10,8 +10,9 @@ def client():
 async def test_gif_from_pornstar(client):
     pornstar = await client.get_pornstar("https://www.pornhub.com/model/teddy-tarantino")
     idx = 0
-    async for result in pornstar.get_gifs(load_html=True):
+    async for result in pornstar.get_gifs():
         gif = result.unwrap()
+        await gif.load_sources("html")
         idx += 1
         assert isinstance(gif.title, str) and len(gif.title) > 0
         assert isinstance(gif.thumbnail, str) and len(gif.thumbnail) > 0

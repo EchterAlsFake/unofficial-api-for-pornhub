@@ -60,8 +60,8 @@ from base_api.modules.errors import (
 
 from pornhub_api.modules.errors import (NetworkError, NotFound, ProxyError, LoginFailed, GifPendingReview, BotDetection,
                                         UnknownNetworkError, DownloadFailed, VideoDisabled, ClientAlreadyLogged)
-from pornhub_api.modules.consts import (extractor_model, extractor_videos, extractor_gifs, extractor_videos_playlist,
-                                        extractor_users, HOST,
+from pornhub_api.modules.consts import (extractor_model_videos, extractor_videos, extractor_gifs, extractor_playlist,
+                                        extractor_users, HOST, extractor_model_uploads,
                                         REGEX_VIDEO_FLASHVARS, REGEX_TOKEN, HEADERS, get_m3u8_urls, COOKIES, LOGIN_PAYLOAD)
 
 
@@ -73,7 +73,7 @@ HELPER_RETRY = RetryPolicy(max_attempts=4, base_delay=0.5, max_delay=8.0)
 
 
 def make_iterator_config(
-    load_specific_sources: tuple[str, ...] = ("api", "html"),
+    load_specific_sources: tuple[str, ...] = (),
     *,
     max_item_concurrency: int | None = None,
     max_page_concurrency: int | None = None,
@@ -132,11 +132,7 @@ def _scrape_stream(
     iterator_config: IteratorConfig | None = None,
 ):
     if iterator_config is None:
-        loader_methods = getattr(constructor, "loader_methods", {})
-        sources = tuple(
-            source for source in ("api", "html") if source in loader_methods
-        )
-        iterator_config = make_iterator_config(sources)
+        iterator_config = make_iterator_config(())
 
     return Helper(core=core, constructor=constructor).iterator(
         target_page_urls=target_page_urls,
@@ -232,11 +228,12 @@ class UserHelper(BaseMedia):
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult, None]:
-        page_urls = [f"{self.url.rstrip('/')}videos?page={page}" for page in range(1, pages + 1)]
+        page_urls = [f"{self.url.rstrip('/')}/videos?page={page}" for page in range(1, pages + 1)]
+        print(page_urls)
         logger.debug(f"Processing: {len(page_urls)} pages...")
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_model, iterator_config=iterator_config,
+            item_extractor=extractor_model_videos, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
@@ -273,7 +270,7 @@ class Pornstar(UserHelper):
         logger.debug(f"Processing: {len(page_urls)} pages...")
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
+            item_extractor=extractor_model_uploads, iterator_config=iterator_config,
         )
         async with stream:
             async for result in stream:
@@ -735,8 +732,12 @@ class Playlist(BaseMedia):
         _link = lexbor.css_first("div.usernameWrap.clearfix > a").attributes.get("href")
         author_link = f"https://www.pornhub.com{_link}"
         stuff = lexbor.css_first("div#js-aboutPlaylistTabView > div").text(strip=True)
-        video_count = re.search(r'(\d+)\s*videos', stuff).group(1)
-        description = lexbor.css_first("p.description.js-playlistDescription > span").text(strip=True)
+        video_count = re.search(r'(\d+)\s*', stuff).group(1)
+        try:
+            description = lexbor.css_first("p.description.js-playlistDescription > span").text(strip=True)
+        except AttributeError:
+            description = None
+
         stuff = re.search(r'unavailable videos that are hidden:\s+(\d+)', html_content)
         unavailable_videos_count = int(stuff.group(1))
 
@@ -779,7 +780,7 @@ class Playlist(BaseMedia):
         if chunked_page_urls:
             stream = _scrape_stream(
                 core=self.core, constructor=Video, target_page_urls=chunked_page_urls,
-                item_extractor=extractor_videos_playlist, iterator_config=iterator_config,
+                item_extractor=extractor_playlist, iterator_config=iterator_config,
             )
             async with stream:
                 async for result in stream:

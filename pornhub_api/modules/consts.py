@@ -120,20 +120,199 @@ def extractor_gifs(html_content: str) -> list:
     return links
 
 
-def extractor_model(html_content: str) -> list:
-    urls = []
+def extractor_model_uploads(html_content: str) -> list:
+    results = []
+    parser = LexborHTMLParser(html_content)
 
-    soup = LexborHTMLParser(html_content)
-    soup1 = soup.css_first("div.profileContentLeft")
-    video_keys = [key.attributes.get("data-video-vkey") for key in soup1.css("[data-video-vkey]")]
+    # Target the specific container for profile/model uploads
+    video_container = parser.css_first("div.profileVids")
 
-    for key in video_keys:
-        if not isinstance(key, str) or not key:
+    if not video_container:
+        # Fallback to general list items if the specific container isn't found
+        video_blocks = parser.css("li.pcVideoListItem, li.videoBox")
+    else:
+        video_blocks = video_container.css("li.pcVideoListItem, li.videoBox")
+
+    for block in video_blocks:
+        # 1. Extract URL
+        a_tag = block.css_first("a[href*='view_video']")
+        if not a_tag:
             continue
-        urls.append({"url": f"https://www.pornhub.com/view_video.php?viewkey={key}"})
 
-    logger.debug(f"extractor_model extracted {len(urls)} urls")
-    return urls
+        href = a_tag.attributes.get("href")
+        if not href:
+            continue
+
+        url = f"https://www.pornhub.com{href}"
+        if any(r["url"] == url for r in results):
+            continue
+
+        # 2. Extract Video ID (viewkey)
+        match = re.search(r"viewkey=([^&#]+)", url)
+        video_id = match.group(1) if match else None
+
+        # 3. Extract Title
+        title = ""
+        title_link = block.css_first("span.title a")
+        if title_link:
+            title = title_link.attributes.get("title") or title_link.text(strip=True)
+
+        if not title:
+            # Fallback to image alt text
+            img_tag = block.css_first("img")
+            if img_tag:
+                title = img_tag.attributes.get("alt", "")
+
+        # 4. Extract Duration
+        duration_var = block.css_first("var.duration")
+        duration = duration_var.text(strip=True) if duration_var else None
+
+        # 5. Extract Thumbnail
+        img_tag = block.css_first("img")
+        thumbnail = None
+        if img_tag:
+            # Prioritize data-mediumthumb/data-src for lazy-loaded images, fallback to src
+            thumbnail = (
+                    img_tag.attributes.get("data-mediumthumb") or
+                    img_tag.attributes.get("data-src") or
+                    img_tag.attributes.get("src")
+            )
+
+        # 6. Extract Views
+        views_var = block.css_first("span.views var")
+        views = views_var.text(strip=True) if views_var else None
+
+        # 7. Extract Publish Date
+        added_var = block.css_first("var.added")
+        publish_date = added_var.text(strip=True) if added_var else None
+
+        # 8. Extract Author Details (works for both /channels/ and /pornstar/)
+        author_link = None
+        author_information = None
+        author_tag = block.css_first("div.usernameWrap a")
+
+        if author_tag:
+            author_href = author_tag.attributes.get("href")
+            if author_href:
+                # Prepend domain if path is relative
+                author_link = f"https://www.pornhub.com{author_href}" if author_href.startswith(
+                    "/") else author_href
+
+            author_name = author_tag.text(strip=True)
+            if author_name:
+                author_information = {"name": author_name}
+
+        # Append structured payload mapped to Dataclass expectations
+        results.append({
+            "url": url,
+            "video_id": video_id,
+            "title": title,
+            "duration": duration,
+            "thumbnail": thumbnail,
+            "views": views,
+            "publish_date": publish_date,
+            "author_link": author_link,
+            "author_information": author_information
+        })
+
+    return results
+
+
+def extractor_model_videos(html_content: str) -> list:
+    results = []
+    parser = LexborHTMLParser(html_content)
+
+    # Target the specific container for model/channel videos
+    video_container = parser.css_first("#mostRecentVideosSection")
+
+    # Fallback if the specific container isn't found
+    if not video_container:
+        video_blocks = parser.css("li.pcVideoListItem, li.videoBox")
+    else:
+        video_blocks = video_container.css("li.pcVideoListItem, li.videoBox")
+
+    for block in video_blocks:
+
+        # 1. Extract URL
+        a_tag = block.css_first("a[href*='view_video']")
+        if not a_tag:
+            continue
+
+        href = a_tag.attributes.get("href")
+        if not href:
+            continue
+
+        url = f"https://www.pornhub.com{href}"
+        if any(r["url"] == url for r in results):
+            continue
+
+        # 2. Extract Video ID (viewkey)
+        match = re.search(r"viewkey=([^&#]+)", url)
+        video_id = match.group(1) if match else None
+
+        # 3. Extract Title
+        title = ""
+        title_link = block.css_first("span.title a")
+        if title_link:
+            title = title_link.attributes.get("title") or title_link.text(strip=True)
+
+        if not title:
+            img_tag = block.css_first("img")
+            if img_tag:
+                title = img_tag.attributes.get("alt", "")
+
+        # 4. Extract Duration
+        duration_var = block.css_first("var.duration")
+        duration = duration_var.text(strip=True) if duration_var else None
+
+        # 5. Extract Thumbnail
+        img_tag = block.css_first("img")
+        thumbnail = None
+        if img_tag:
+            # Prioritize high-quality lazy-loaded sources, fallback to standard src
+            thumbnail = (
+                    img_tag.attributes.get("data-mediumthumb") or
+                    img_tag.attributes.get("data-src") or
+                    img_tag.attributes.get("src")
+            )
+
+        # 6. Extract Views
+        views_var = block.css_first("span.views var")
+        views = views_var.text(strip=True) if views_var else None
+
+        # 7. Extract Publish Date
+        added_var = block.css_first("var.added")
+        publish_date = added_var.text(strip=True) if added_var else None
+
+        # 8. Extract Author Details
+        author_link = None
+        author_information = None
+        author_tag = block.css_first("div.usernameWrap a")
+
+        if author_tag:
+            author_href = author_tag.attributes.get("href")
+            if author_href:
+                author_link = f"https://www.pornhub.com{author_href}" if author_href.startswith(
+                    "/") else author_href
+
+            author_name = author_tag.text(strip=True)
+            if author_name:
+                author_information = {"name": author_name}
+
+        # Append structured payload
+        results.append({
+            "url": url,
+            "video_id": video_id,
+            "title": title,
+            "duration": duration,
+            "thumbnail": thumbnail,
+            "views": views,
+            "publish_date": publish_date,
+            "author_link": author_link,
+            "author_information": author_information
+        })
+    print(f"Results: {results}")
+    return results
 
 
 def extractor_videos(html_content: str) -> list:
@@ -158,75 +337,139 @@ def extractor_videos(html_content: str) -> list:
         return results
 
     for block in video_blocks:
-        try:
-            # Find the link tag which contains the URL and title
-            a_tag = block.css_first("a[href*='view_video']")
-            if not a_tag:
-                continue
-                
-            href = a_tag.attributes.get("href")
-            if not href:
-                continue
-                
-            url = f"https://www.pornhub.com{href}"
-            if any(r["url"] == url for r in results):
-                continue
-
-            title = a_tag.attributes.get("title") or (a_tag.css_first("img").attributes.get("alt") if a_tag.css_first("img") else "")
-            if not title:
-                # Try finding title in a separate link or span
-                title_link = block.css_first("a.title") or block.css_first("span.title")
-                title = title_link.text(strip=True) if title_link else ""
-            
-            # Extract duration if available
-            duration_var = block.css_first("var.duration")
-            duration = duration_var.text(strip=True) if duration_var else None
-            
-            # Extract thumbnail
-            img_tag = block.css_first("img")
-            thumb = img_tag.attributes.get("data-src") or img_tag.attributes.get("src") if img_tag else None
-
-            results.append({
-                "url": url,
-                "title": title,
-                "duration": duration,
-                "thumbnail": thumb,
-            })
-        except Exception:
+        # Find the link tag which contains the URL and title
+        a_tag = block.css_first("a[href*='view_video']")
+        if not a_tag:
             continue
+
+        href = a_tag.attributes.get("href")
+        if not href:
+            continue
+
+        url = f"https://www.pornhub.com{href}"
+        if any(r["url"] == url for r in results):
+            continue
+
+        title = a_tag.attributes.get("title") or (a_tag.css_first("img").attributes.get("alt") if a_tag.css_first("img") else "")
+        if not title:
+            # Try finding title in a separate link or span
+            title_link = block.css_first("a.title") or block.css_first("span.title")
+            title = title_link.text(strip=True) if title_link else ""
+
+        # Extract duration if available
+        duration_var = block.css_first("var.duration")
+        duration = duration_var.text(strip=True) if duration_var else None
+
+        # Extract thumbnail
+        img_tag = block.css_first("img")
+        thumb = img_tag.attributes.get("data-src") or img_tag.attributes.get("src") if img_tag else None
+
+        results.append({
+            "url": url,
+            "title": title,
+            "duration": duration,
+            "thumbnail": thumb,
+        })
 
     logger.debug(f"extractor_videos extracted {len(results)} videos")
     return results
 
 
-def extractor_videos_playlist(content: str) -> list:
-    unique_urls = set()
-    html_to_parse = None
+def extractor_playlist(html_content: str) -> list:
+    results = []
+    parser = LexborHTMLParser(html_content)
 
-    try:
-        # Attempt to parse as JSON first
-        data = json.loads(content)
-        html_to_parse = data.get("html")
-    except json.JSONDecodeError:
-        # If it's not JSON, assume it's raw HTML
-        html_to_parse = content
+    # Target the specific playlist container
+    playlist_container = parser.css_first(
+        "div.videos.row-5-thumbs.search-video-thumbs.scrollLazyload.js-videoPlaylist.viewPlaylist")
 
-    if html_to_parse:
-        lexbor = LexborHTMLParser(html_to_parse)
-        # Search for common patterns for video links in playlist chunks
-        # These patterns are derived from inspecting typical Pornhub playlist HTML
-        
-        # Search for all 'a' tags with an href containing "/view_video.php?viewkey="
-        for a_tag in lexbor.css("a[href*='viewkey=']"):
-            href = a_tag.attributes.get("href")
-            if href:
-                if not href.startswith("https://www.pornhub.com"):
-                    unique_urls.add(f"https://www.pornhub.com{href}")
-                else:
-                    unique_urls.add(href)
+    if not playlist_container:
+        # Fallback if the specific container isn't found
+        video_blocks = parser.css("li.pcVideoListItem, li.videoBox")
+    else:
+        video_blocks = playlist_container.css("li.pcVideoListItem, li.videoBox")
 
-    links = [{"url": url} for url in unique_urls]
-    return links
+    for block in video_blocks:
+        # 1. Extract URL (and skip duplicates)
+        a_tag = block.css_first("a[href*='view_video']")
+        if not a_tag:
+            continue
+
+        href = a_tag.attributes.get("href")
+        if not href:
+            continue
+
+        url = f"https://www.pornhub.com{href}"
+        if any(r["url"] == url for r in results):
+            continue
+
+        # 2. Extract Video ID (viewkey)
+        match = re.search(r"viewkey=([^&#]+)", url)
+        video_id = match.group(1) if match else None
+
+        # 3. Extract Title
+        title = ""
+        title_link = block.css_first("span.title a")
+        if title_link:
+            title = title_link.attributes.get("title") or title_link.text(strip=True)
+
+        if not title:
+            img_tag = block.css_first("img")
+            if img_tag:
+                title = img_tag.attributes.get("alt", "")
+
+        # 4. Extract Duration
+        duration_var = block.css_first("var.duration")
+        duration = duration_var.text(strip=True) if duration_var else None
+
+        # 5. Extract Thumbnail
+        img_tag = block.css_first("img")
+        thumbnail = None
+        if img_tag:
+            # Prefer data-mediumthumb/data-src for lazy-loaded images, fallback to src
+            thumbnail = (
+                    img_tag.attributes.get("data-mediumthumb") or
+                    img_tag.attributes.get("data-src") or
+                    img_tag.attributes.get("src")
+            )
+
+        # 6. Extract Views
+        views_var = block.css_first("span.views var")
+        views = views_var.text(strip=True) if views_var else None
+
+        # 7. Extract Publish Date
+        added_var = block.css_first("var.added")
+        publish_date = added_var.text(strip=True) if added_var else None
+
+        # 8. Extract Author Details
+        author_link = None
+        author_information = None
+        author_tag = block.css_first("div.usernameWrap a")
+
+        if author_tag:
+            author_href = author_tag.attributes.get("href")
+            if author_href:
+                author_link = f"https://www.pornhub.com{author_href}" if author_href.startswith(
+                    "/") else author_href
+
+            author_name = author_tag.text(strip=True)
+            if author_name:
+                author_information = {"name": author_name}
+
+        # Append structured payload mapping to Dataclass expectations
+        results.append({
+            "url": url,
+            "video_id": video_id,
+            "title": title,
+            "duration": duration,
+            "thumbnail": thumbnail,
+            "views": views,
+            "publish_date": publish_date,
+            "author_link": author_link,
+            "author_information": author_information
+        })
+
+    return results
 
 
 def extractor_users(html_content: str) -> list:

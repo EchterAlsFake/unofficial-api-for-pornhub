@@ -17,7 +17,7 @@ async def test_video(client):
     assert isinstance(video.title, str) and len(video.title) > 3
     assert isinstance(video.publish_date, str) and len(video.publish_date) > 1
     assert isinstance(video.duration, int)
-    assert isinstance(video.likes, str)
+    assert isinstance(video.likes, int)
     assert isinstance(video.thumbnail, str)
 
     assert isinstance(video.available_qualities, list) and len(video.available_qualities) > 0
