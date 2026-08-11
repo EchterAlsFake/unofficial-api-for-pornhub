@@ -1007,11 +1007,11 @@ class Video(BaseMedia):
         """
 
         await self.load_fields("title", "m3u8_base_url")
-        logger.info(f"Downloading Video {self.title} to {configuration.path}")
+        logger.info(f"Downloading Video {self.video_id}: {self.title} to {configuration.path}")
         config = copy.deepcopy(configuration)
         config.m3u8_base_url = self.m3u8_base_url
         if not config.no_title:
-            config.path = os.path.join(config.path, f"{self.title}.mp4")
+            config.path = os.path.join(config.path, f"{self.video_id}.mp4")
 
         try:
             return await self.core.download(configuration=config)
