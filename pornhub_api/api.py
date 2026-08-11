@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from curl_cffi import AsyncSession
 from selectolax.lexbor import LexborHTMLParser
 from concurrent.futures import ProcessPoolExecutor
-from typing import AsyncGenerator, Any, ClassVar, Literal
+from typing import AsyncGenerator, Any, ClassVar, Literal, TypeVar
 from base_api.modules.static_functions import strip_title
 from base_api.modules.type_hints import DownloadReport
 from base_api.modules.config import IteratorConfig
@@ -45,10 +45,9 @@ from base_api import (
     Helper,
     MediaLoadError,
     MediaLoadErrors,
-    RetryPolicy,
     ScrapeErrorContext,
     ScrapeResult,
-    media_field,
+    media_field, ScrapeStream,
 )
 from base_api.modules.errors import (
     BotProtectionDetected,
@@ -70,8 +69,7 @@ logger = logging.getLogger("PornHub API")
 logger.addHandler(logging.NullHandler())
 
 
-HELPER_RETRY = RetryPolicy(max_attempts=4, base_delay=0.5, max_delay=8.0)
-
+MediaT = TypeVar("MediaT", bound=BaseMedia)
 
 def make_iterator_config(
     load_specific_sources: tuple[str, ...] = (),
@@ -83,8 +81,8 @@ def make_iterator_config(
         max_item_concurrency=max_item_concurrency,
         max_page_concurrency=max_page_concurrency,
         load_specific_sources=load_specific_sources,
-        item_retry=HELPER_RETRY,
-        page_retry=HELPER_RETRY,
+        item_retry=None,
+        page_retry=None,
         page_error_mode=ErrorMode.SKIP,
         item_error_handler=None,
         page_error_handler=None,
@@ -131,7 +129,7 @@ def _scrape_stream(
     target_page_urls: list[str],
     item_extractor: Any,
     iterator_config: IteratorConfig | None = None,
-):
+) -> ScrapeStream[MediaT]:
     if iterator_config is None:
         iterator_config = make_iterator_config(())
 
@@ -228,7 +226,7 @@ class UserHelper(BaseMedia):
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         page_urls = [f"{self.url.rstrip('/')}/videos?page={page}" for page in range(1, pages + 1)]
         print(page_urls)
         logger.debug(f"Processing: {len(page_urls)} pages...")
@@ -266,7 +264,7 @@ class Pornstar(UserHelper):
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         page_urls = [f"{self.url.rstrip('/')}/videos/upload?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
         stream = _scrape_stream(
@@ -282,7 +280,7 @@ class Pornstar(UserHelper):
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[GIF], None]:
         page_urls = [f"{self.url.rstrip('/')}/gifs/video?page={page}" for page in range(1, pages + 1)]
         logger.debug(f"Processing: {len(page_urls)} pages...")
         stream = _scrape_stream(
@@ -679,7 +677,7 @@ class Channel(BaseMedia):
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         page_urls = [f"{self.url.rstrip('/')}/videos?page={page}" for page in range(1, pages + 1)]
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
@@ -772,7 +770,7 @@ class Playlist(BaseMedia):
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         # I will not optimize this function because I am too lazy to handle this one edge case here
         await self.load_fields("playlist_id", "token")
         chunked_page_urls = [
@@ -1046,7 +1044,7 @@ class Account:
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         async for result in self.client.get_recommended(pages=pages, iterator_config=iterator_config):
             yield result
 
@@ -1054,7 +1052,7 @@ class Account:
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         async for result in self.client.get_history(pages=pages, iterator_config=iterator_config):
             yield result
 
@@ -1062,7 +1060,7 @@ class Account:
         self,
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         async for result in self.client.get_favorites(pages=pages, iterator_config=iterator_config):
             yield result
 
@@ -1071,7 +1069,7 @@ class Account:
         section: str = "videos",
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         async for result in self.client.get_feed(section=section, pages=pages, iterator_config=iterator_config):
             yield result
 
@@ -1252,7 +1250,7 @@ class Client:
         section: str = "videos",
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         """
         Get the account feed.
         :param iterator_config: Iterator concurrency, loading, ordering, and error behavior.
@@ -1384,7 +1382,7 @@ class Client:
                           search_filter: Literal["mr", "mv", "tr"] | None = None,
                           pages: int = 5,
                           iterator_config: IteratorConfig | None = None,
-                          ) -> AsyncGenerator[ScrapeResult, None]:
+                          ) -> AsyncGenerator[ScrapeResult[GIF], None]:
         """
         :param search_filter: [mr = Most Recent, mv = Most Viewed, tr = Top Rated] Default: Most relevant
         :param category: [gay, transgender] Default: Straight
@@ -1418,7 +1416,7 @@ class Client:
                             duration_max: Literal["10", "20", "30"] | None = None,
                             pages: int = 5,
                             iterator_config: IteratorConfig | None = None,
-                            ) -> AsyncGenerator[ScrapeResult, None]:
+                            ) -> AsyncGenerator[ScrapeResult[Video], None]:
         base_url = f"https://www.pornhub.com/video/search?search={query}"
         if production_type:
             base_url += f"&p={production_type}"
@@ -1447,7 +1445,7 @@ class Client:
                                  period: Literal["weekly", "monthly", "alltime"] | None = None,
                                  pages: int = 5,
                                  iterator_config: IteratorConfig | None = None,
-                                 ) -> AsyncGenerator[ScrapeResult, None]:
+                                 ) -> AsyncGenerator[ScrapeResult[Video], None]:
         """
         Search for videos using the HubTraffic API (Webmaster API).
         This is faster and provides pre-parsed metadata.
