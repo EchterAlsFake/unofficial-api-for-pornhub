@@ -32,6 +32,7 @@ from curl_cffi import AsyncSession
 from selectolax.lexbor import LexborHTMLParser
 from concurrent.futures import ProcessPoolExecutor
 from typing import AsyncGenerator, Any, ClassVar, Literal
+from base_api.modules.static_functions import strip_title
 from base_api.modules.type_hints import DownloadReport
 from base_api.modules.config import IteratorConfig
 from base_api import (
@@ -512,8 +513,9 @@ class Short(BaseMedia):
         logger.info(f"Downloading Short {self.title} to {configuration.path}")
         config = copy.deepcopy(configuration)
         config.m3u8_base_url = self.m3u8_base_url
+        title = strip_title(self.title)
         if not config.no_title:
-            config.path = os.path.join(config.path, f"{self.title}.mp4")
+            config.path = os.path.join(config.path, f"{title}.mp4")
 
         try:
             return await self.core.download(configuration=config)
@@ -606,8 +608,9 @@ class GIF(BaseMedia):
         await self.load_fields("title", "content_url")
         logger.info(f"Downloading GIF {self.title} to {configuration.path}")
         config = copy.deepcopy(configuration)
+        title = strip_title(self.title)
         if not config.no_title:
-            config.path = os.path.join(config.path, f"{self.title}.mp4")
+            config.path = os.path.join(config.path, f"{title}.mp4")
 
         try:
             return await self.core.legacy_download(url=self.content_url, configuration=config)
@@ -1010,8 +1013,9 @@ class Video(BaseMedia):
         logger.info(f"Downloading Video {self.title} to {configuration.path}")
         config = copy.deepcopy(configuration)
         config.m3u8_base_url = self.m3u8_base_url
+        title = strip_title(self.title)
         if not config.no_title:
-            config.path = os.path.join(config.path, f"{self.title}.mp4")
+            config.path = os.path.join(config.path, f"{title}.mp4")
 
         try:
             return await self.core.download(configuration=config)
