@@ -30,6 +30,7 @@ async def test_pornstar(client):
     assert isinstance(pornstar.bio, str) and len(pornstar.bio) > 0
     assert isinstance(pornstar.about, str) and len(pornstar.about) > 0
     assert isinstance(pornstar.info, dict) and len(pornstar.info) > 0
+    assert isinstance(pornstar.name, str) and len(pornstar.name) > 0
 
     idx = 0
     async for result in pornstar.get_videos():
@@ -54,6 +55,7 @@ async def test_model(client):
     pornstar = await client.get_model("https://www.pornhub.com/model/catalina-days")
     assert isinstance(pornstar.about, str) and len(pornstar.about) > 0
     assert isinstance(pornstar.info, dict) and len(pornstar.info) > 0
+    assert isinstance(pornstar.name, str) and len(pornstar.name) > 0
 
     idx = 0
     async for result in pornstar.get_videos():

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "unofficial-api-for-pornhub"
-version = "5.4"
+version = "5.4.1"
 description = "An asynchronous API wrapper and scraper for Pornhub"
 authors = [
   {name = 'Egsagon', email = "egsagon.git@gmail.com"},
@@ -63,5 +63,5 @@ Repository = "https://github.com/EchterAlsFake/unofficial-api-for-pornhub"
 module-name = "pornhub_api"
 module-root = ""
 
-[tool.uv.sources]
-eaf-base-api = { path = "../eaf_base_api", editable = true }
+[tool.pytest.ini_options]
+asyncio_default_test_loop_scope = "session"

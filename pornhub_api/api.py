@@ -177,6 +177,7 @@ class UserHelper(BaseMedia):
     info: dict | None = media_field("html")
     bio: str | None = media_field("html")
     about: str | None = media_field("html")
+    name: str | None = media_field("html")
 
     loader_methods: ClassVar[dict[str, str]] = {"html": "_load_html"}
 
@@ -216,10 +217,16 @@ class UserHelper(BaseMedia):
             for thing in stuff:
                 info[thing.css_first("span").text(strip=True)] = thing.css("span")[1].text(strip=True)
 
+        try:
+            name = lexbor.css_first("div.name").css_first("h1").text(strip=True)
+        except AttributeError:
+            name = lexbor.css_first("div.profileUserName").css_first("a").text(strip=True)
+
         return {
             "bio": bio,
             "about": about,
-            "info": info
+            "info": info,
+            "name": name,
         }
 
     async def get_videos(
@@ -228,7 +235,6 @@ class UserHelper(BaseMedia):
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
         page_urls = [f"{self.url.rstrip('/')}/videos?page={page}" for page in range(1, pages + 1)]
-        print(page_urls)
         logger.debug(f"Processing: {len(page_urls)} pages...")
         stream = _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
