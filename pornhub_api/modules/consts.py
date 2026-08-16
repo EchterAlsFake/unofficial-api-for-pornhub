@@ -63,7 +63,7 @@ def estimate_width(height: int) -> int:
     if height <= 0:
         return 0
 
-    return int(height * 9 / 16)
+    return int(height * 16 / 9)
 
 
 def get_m3u8_urls(media_definitions: dict) -> dict:

@@ -337,7 +337,7 @@ wheels = [
 
 [[package]]
 name = "unofficial-api-for-pornhub"
-version = "5.4"
+version = "5.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "chompjs" },
