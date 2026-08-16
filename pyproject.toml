@@ -63,8 +63,5 @@ Repository = "https://github.com/EchterAlsFake/unofficial-api-for-pornhub"
 module-name = "pornhub_api"
 module-root = ""
 
-[tool.uv.sources]
-eaf-base-api = { path = "../eaf_base_api", editable = true }
-
 [tool.pytest.ini_options]
 asyncio_default_test_loop_scope = "session"
