@@ -1093,7 +1093,7 @@ class Account:
 
 
 class Client:
-    def __init__(self, core: BaseCore = BaseCore(), email: str | None = None, password: str | None = None, login: bool = False):
+    def __init__(self, core: BaseCore = BaseCore(), email: str | None = None, password: str | None = None):
         self.core = core or BaseCore()
         self.core.initialize_session()
         assert isinstance(self.core.session, AsyncSession)
@@ -1104,8 +1104,12 @@ class Client:
         self.logged = False
         self.account = Account(self)
 
+    @classmethod
+    async def create(cls, core: BaseCore = BaseCore(), email: str | None = None, password: str | None = None, login: bool = False) -> "Client":
+        client = cls(core=core, email=email, password=password)
         if login and email and password:
-            asyncio.create_task(self.login())
+            await asyncio.create_task(client.login())
+        return client
 
     async def login(self, force: bool = False, throw: bool = True) -> bool:
         """
