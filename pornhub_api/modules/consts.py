@@ -14,7 +14,6 @@ HEADERS = {
     'Accept': '*/*',
     'Accept-Language': 'en,en-US',
     'Connection': 'keep-alive',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/114.0',
     'Referer': 'https://www.pornhub.com/',
     'Origin': 'https://www.pornhub.com',
 }
