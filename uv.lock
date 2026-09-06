@@ -195,30 +195,15 @@ wheels = [
 [[package]]
 name = "eaf-base-api"
 version = "4.0.0"
-source = { editable = "../eaf_base_api" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cachetools" },
     { name = "curl-cffi" },
     { name = "tenacity" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "av", marker = "python_full_version >= '3.12' and extra == 'hls'" },
-    { name = "cachetools", specifier = ">=7.0.0" },
-    { name = "curl-cffi" },
-    { name = "m3u8", marker = "extra == 'hls'" },
-    { name = "tenacity", specifier = ">=9.1.2" },
-]
-provides-extras = ["hls"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy" },
-    { name = "pylint" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "types-m3u8" },
+sdist = { url = "https://files.pythonhosted.org/packages/77/70/90901a40caa829830338bdaa4746f8bddca0c952bda6f750241f3e255b90/eaf_base_api-4.0.0.tar.gz", hash = "sha256:451748ff0cf0908b419e17b5f1498ea3686881cca9a7a669d1b0dbfa094dfc55", size = 61971, upload-time = "2026-08-11T16:06:46.805Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/98/e24a237971b58d12932d3f2c23efe1c3acd5de3eecd3dd7961cbb75cf01c/eaf_base_api-4.0.0-py3-none-any.whl", hash = "sha256:45d28f489b16e4e122b015f8b6619949b6bd784f7e120a94cb457ac3d2492f51", size = 63539, upload-time = "2026-08-11T16:06:45.451Z" },
 ]
 
 [[package]]
@@ -337,7 +322,7 @@ wheels = [
 
 [[package]]
 name = "unofficial-api-for-pornhub"
-version = "5.4.1"
+version = "5.4.2"
 source = { editable = "." }
 dependencies = [
     { name = "chompjs" },
@@ -357,7 +342,7 @@ requires-dist = [
     { name = "av", marker = "extra == 'av'" },
     { name = "chompjs" },
     { name = "curl-cffi" },
-    { name = "eaf-base-api", editable = "../eaf_base_api" },
+    { name = "eaf-base-api", specifier = ">=4.0.0" },
     { name = "m3u8" },
     { name = "selectolax" },
 ]

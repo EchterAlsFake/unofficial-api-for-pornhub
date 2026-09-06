@@ -20,20 +20,20 @@
 
 # Features
 
-| Category | Details |
-|---|---|
+| Category                           | Details |
+|------------------------------------|---|
 | **Video/Short/GIF/Album Fetching** | Fetch videos, shorts, GIFs, or albums with rich metadata and configurations |
-| **Pornstar/User Profiles** | Fetch channel/user/model profiles including uploads, GIFs, and subscription lists |
-| **Photo Albums** | Fetch album details, list photos, and download photos page-by-page |
-| **Playlists & Channels** | Fetch playlist/channel videos and details with concurrency control |
-| **Video Search** | Search videos with advanced filters (production type, sorting, duration limits) |
-| **HubTraffic Search** | Scrape hubtraffic videos with sorting and period filters |
-| **User Accounts & Login** | Access personalized history, recommendations, favorites, feed, and subscriptions via login credentials |
-| **Async-First** | Fully asynchronous (`async` / `await`) built on top of `asyncio` |
-| **Built-in Caching** | Automatic response caching with configurable limits to reduce redundant network requests |
-| **CLI Support** | Command-line interface for quick downloads — run `phub -h` for options |
-| **Type Safety** | Comprehensive type hinting and `dataclass`-based models throughout |
-
+| **Pornstar/User Profiles**         | Fetch channel/user/model profiles including uploads, GIFs, and subscription lists |
+| **Photo Albums**                   | Fetch album details, list photos, and download photos page-by-page |
+| **Playlists & Channels**           | Fetch playlist/channel videos and details with concurrency control |
+| **Video Search**                   | Search videos with advanced filters (production type, sorting, duration limits) |
+| **HubTraffic Search**              | Scrape hubtraffic videos with sorting and period filters |
+| **User Accounts & Login**          | Access personalized history, recommendations, favorites, feed, and subscriptions via login credentials |
+| **Async-First**                    | Fully asynchronous (`async` / `await`) built on top of `asyncio` |
+| **Built-in Caching**               | Automatic response caching with configurable limits to reduce redundant network requests |
+| **CLI Support**                    | Command-line interface for quick downloads — run `phub -h` for options |
+| **Type Safety**                    | Comprehensive type hinting and `dataclass`-based models throughout |
+| **Native MCP Server**              | Embed the documentation directly into your AI Agent using the MCP protocol |
 #### Networking Features
 
 The networking layer is provided by the [`eaf_base_api`](https://github.com/EchterAlsFake/eaf_base_api) package and is fully configurable through `RuntimeConfig`:

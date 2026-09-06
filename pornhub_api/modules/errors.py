@@ -1,54 +1,44 @@
-class GifPendingReview(BaseException):
-    def __init__(self, msg):
+class PornhubAPIError(Exception):
+    def __init__(self, msg: str = ""):
         super().__init__(msg)
         self.msg = msg
 
 
-class VideoDisabled(BaseException):
-    def __init__(self, msg):
-        super().__init__(msg)
-        self.msg = msg
-
-
-class LoginFailed(Exception):
+class GifPendingReview(PornhubAPIError):
     pass
 
 
-class ClientAlreadyLogged(Exception):
+class VideoDisabled(PornhubAPIError):
     pass
 
 
-class NotFound(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-        self.msg = msg
+class LoginFailed(PornhubAPIError):
+    pass
 
 
-class NetworkError(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-        self.msg = msg
+class ClientAlreadyLogged(PornhubAPIError):
+    pass
 
 
-class BotDetection(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-        self.msg = msg
+class NotFound(PornhubAPIError):
+    pass
 
 
-class ProxyError(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-        self.msg = msg
+class NetworkError(PornhubAPIError):
+    pass
 
 
-class UnknownNetworkError(Exception):
-    def __init__(self, msg):
-        super().__init__(msg)
-        self.msg = msg
+class BotDetection(PornhubAPIError):
+    pass
 
 
-class DownloadFailed(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-        self.msg = msg
+class ProxyError(PornhubAPIError):
+    pass
+
+
+class UnknownNetworkError(PornhubAPIError):
+    pass
+
+
+class DownloadFailed(PornhubAPIError):
+    pass
