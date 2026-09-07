@@ -50,6 +50,8 @@ av = ["av"]
 
 [project.scripts]
 phub = "pornhub_api.api:cli"
+pornhub_api = "pornhub_api.api:main"
+
 
 [project.urls]
 Documentation = "https://docs.echteralsfake.me/pornhub"
@@ -65,3 +67,6 @@ module-root = ""
 
 [tool.pytest.ini_options]
 asyncio_default_test_loop_scope = "session"
+
+[tool.uv.sources]
+eaf-base-api = { path = "../eaf_base_api", editable = true }

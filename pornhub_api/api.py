@@ -43,6 +43,9 @@ from base_api import (
     ScrapeResult,
     media_field,
     ScrapeStream,
+    make_iterator_config,
+    scrape_stream as _scrape_stream,
+    str_to_bool,
 )
 from base_api.modules.errors import (
     BotProtectionDetected,
@@ -87,51 +90,8 @@ logger.addHandler(logging.NullHandler())
 MediaT = TypeVar("MediaT", bound=BaseMedia)
 
 
-def make_iterator_config(
-    load_specific_sources: tuple[str, ...] = (),
-    *,
-    max_item_concurrency: int | None = None,
-    max_page_concurrency: int | None = None,
-) -> IteratorConfig:
-    return IteratorConfig(
-        max_item_concurrency=max_item_concurrency,
-        max_page_concurrency=max_page_concurrency,
-        load_specific_sources=load_specific_sources,
-        item_retry=None,
-        page_retry=None,
-        page_error_mode=ErrorMode.SKIP,
-        item_error_handler=None,
-        page_error_handler=None,
-    )
-
-
 def _requested_sources(*, html: bool = False, api: bool = False) -> tuple[str, ...]:
     return tuple(source for source, enabled in (("api", api), ("html", html)) if enabled)
-
-
-async def _stream_results(stream: ScrapeStream[MediaT]) -> AsyncGenerator[ScrapeResult[MediaT], None]:
-    async with stream:
-        async for result in stream:
-            yield result
-
-
-def _scrape_stream(
-    *,
-    core: BaseCore,
-    constructor: Any,
-    target_page_urls: list[str],
-    item_extractor: Any,
-    iterator_config: IteratorConfig | None = None,
-) -> AsyncGenerator[ScrapeResult[MediaT], None]:
-    if iterator_config is None:
-        iterator_config = make_iterator_config(())
-
-    stream = Helper(core=core, constructor=constructor).iterator(
-        target_page_urls=target_page_urls,
-        item_extractor=item_extractor,
-        iterator_config=iterator_config,
-    )
-    return _stream_results(stream)
 
 
 def build_m3u8_master(media_definitions: list[dict] | None) -> str:
@@ -1173,10 +1133,6 @@ class Client:
         )
 
 
-def str_to_bool(val: str) -> bool:
-    return val.lower() in ('yes', 'true', 't', '1')
-
-
 def can_download(state: dict) -> bool:
     return state["limit"] is None or state["downloaded"] < state["limit"]
 
@@ -1251,13 +1207,14 @@ async def _cli_process_url(client: Client, url: str, args: argparse.Namespace, n
         print(f"Error processing {url}: {e}")
 
 
-async def run_main():
+def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="PornHub API Command Line Interface")
     parser.add_argument("--download", metavar="URL (str)", type=str, help="URL to download from")
-    parser.add_argument("--quality", metavar="best,half,worst", type=str, help="The video quality (best,half,worst)", required=True)
+    parser.add_argument("--quality", metavar="best,half,worst", type=str, default="best", help="The video quality (best,half,worst)")
     parser.add_argument("--file", metavar="Source to .txt file", type=str, help="(Optional) Specify a file with URLs (separated with new lines)")
-    parser.add_argument("--output", metavar="Output directory", type=str, help="The output path (with filename)", required=True)
-    parser.add_argument("--no-title", metavar="True,False", type=str, help="Whether to apply video title automatically to output path or not", required=True)
+    parser.add_argument("--output", metavar="Output directory", type=str, help="The output path (with filename or directory)", required=True)
+    parser.add_argument("--no-title", metavar="True,False", type=str, nargs="?", const="True", default="False",
+                        help="Whether to apply video title automatically to output path or not")
     parser.add_argument("--pages", metavar="Pages (int)", type=int, default=1, help="Number of pages to fetch for iterables (Default: 1)")
     parser.add_argument("--email", type=str, help="Account email for login", default=None)
     parser.add_argument("--password", type=str, help="Account password for login", default=None)
@@ -1266,9 +1223,13 @@ async def run_main():
     parser.add_argument("--liked", action="store_true", help="Download liked/favorite videos (requires login)")
     parser.add_argument("--recommended", action="store_true", help="Download recommended videos (requires login)")
     parser.add_argument("--watched", action="store_true", help="Download watched/history videos (requires login)")
+    return parser
 
-    args = parser.parse_args()
-    no_title = str_to_bool(args.no_title)
+
+async def run_main(args_list: list[str] | None = None):
+    parser = create_parser()
+    args = parser.parse_args(args_list)
+    no_title = str_to_bool(args.no_title) if isinstance(args.no_title, str) else bool(args.no_title)
 
     login = False
     client = Client(email=args.email, password=args.password)
@@ -1283,6 +1244,10 @@ async def run_main():
     if args.file:
         with open(args.file, "r") as file:
             urls.extend(file.read().splitlines())
+
+    if not urls and not (login and (args.liked or args.recommended or args.watched)):
+        parser.print_help()
+        return
 
     state = {"downloaded": 0, "limit": args.limit}
 
@@ -1303,8 +1268,16 @@ async def run_main():
 
 
 def cli():
-    asyncio.run(run_main())
+    try:
+        asyncio.run(run_main())
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user.")
+
+
+def main():
+    cli()
 
 
 if __name__ == "__main__":
-    asyncio.run(run_main())
+    main()
+

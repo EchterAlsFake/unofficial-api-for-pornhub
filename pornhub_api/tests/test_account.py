@@ -1,12 +1,15 @@
-email = None
-password = None
-
+import os
 import pytest
 from pornhub_api import Client
+
+email = os.environ.get("PORNHUB_EMAIL")
+password = os.environ.get("PORNHUB_PASSWORD")
 
 
 @pytest.mark.asyncio
 async def test_all():
+    if not email or not password:
+        pytest.skip("Pornhub credentials not configured in environment (PORNHUB_EMAIL, PORNHUB_PASSWORD)")
     client = Client(email=email, password=password)
     await client.login()
 
