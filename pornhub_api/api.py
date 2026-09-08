@@ -25,6 +25,8 @@ import logging
 import asyncio
 import argparse
 
+from base_api.modules.logger import configure_app_logging
+
 from contextlib import aclosing
 from dataclasses import dataclass
 from typing import AsyncGenerator, Any, ClassVar, Literal, TypeVar
@@ -48,6 +50,7 @@ from base_api import (
     str_to_bool,
 )
 from base_api.modules.errors import (
+    DownloadCancelled,
     BotProtectionDetected,
     HTTPStatusError,
     InvalidProxy,
@@ -103,17 +106,20 @@ def build_m3u8_master(media_definitions: list[dict] | None) -> str:
 
 
 async def _download_hls(media: BaseMedia, configuration: DownloadConfigHLS) -> bool | DownloadReport:
-    await media.load_fields("title", "m3u8_base_url")
-    logger.info(f"Downloading {type(media).__name__} {media.title} to {configuration.path}")
-    config = copy.deepcopy(configuration)
-    config.m3u8_base_url = media.m3u8_base_url
-    if not config.no_title:
-        config.path = os.path.join(config.path, f"{strip_title(media.title)}.mp4")
-
     try:
+        await media.load_fields("title", "m3u8_base_url")
+        logger.info(f"Downloading {type(media).__name__} {media.title} to {configuration.path}")
+        config = copy.deepcopy(configuration)
+        config.m3u8_base_url = media.m3u8_base_url
+        if not config.no_title:
+            config.path = os.path.join(config.path, f"{strip_title(media.title)}.mp4")
+
         return await media.core.download(configuration=config)
+    except DownloadCancelled:
+        raise
     except Exception as e:
-        raise DownloadFailed(str(e))
+        logger.exception("Download failed for %s: %s", media.url, e)
+        raise DownloadFailed(f"Download failed for {media.url}: {e}") from e
 
 
 async def get_html_content(core: BaseCore, url: str) -> str:
@@ -123,22 +129,26 @@ async def get_html_content(core: BaseCore, url: str) -> str:
         logger.debug(f"Successfully fetched HTML from {url} ({len(content)} bytes)")
         return content
     except HTTPStatusError as e:
+        logger.exception("Request failed for %s: %s", url, e)
         if e.status_code == 404:
-            logger.warning(f"Server returned 404 for: {url}")
             raise NotFound(f"Server returned 404 for: {url}") from e
-        raise
+        raise NetworkError(f"Request failed for {url}: {e}") from e
     except NetworkRequestError as e:
-        logger.error(f"NetworkRequestError for {url}: {e}")
-        raise NetworkError(str(e)) from e
+        logger.exception("Request failed for %s: %s", url, e)
+        raise NetworkError(f"Request failed for {url}: {e}") from e
     except InvalidProxy as e:
-        logger.error(f"InvalidProxy for {url}: {e}")
-        raise ProxyError(str(e)) from e
+        logger.exception("Request failed for %s: %s", url, e)
+        raise ProxyError(f"Request failed for {url}: {e}") from e
     except BotProtectionDetected as e:
-        logger.error(f"BotProtectionDetected for {url}: {e}")
-        raise BotDetection(str(e)) from e
+        logger.exception("Request failed for %s: %s", url, e)
+        raise BotDetection(f"Request failed for {url}: {e}") from e
     except UnknownError as e:
-        logger.error(f"UnknownError for {url}: {e}")
-        raise UnknownNetworkError(str(e)) from e
+        logger.exception("Request failed for %s: %s", url, e)
+        raise UnknownNetworkError(f"Request failed for {url}: {e}") from e
+
+    except Exception:
+        logger.exception("Failed to fetch or decode response for %s", url)
+        raise
 
 
 @dataclass(kw_only=True, slots=True)
@@ -324,7 +334,13 @@ class Album(BaseMedia):
 
     async def download_photo(self, url: str, path: str) -> bool:
         logger.info(f"Downloading photo {url} to {path}")
-        return await self.core.legacy_download(url=url, configuration=DownloadConfigRAW(path=path, quality="best"))
+        try:
+            return await self.core.legacy_download(url=url, configuration=DownloadConfigRAW(path=path, quality="best"))
+        except DownloadCancelled:
+            raise
+        except Exception as e:
+            logger.exception("Photo download failed for %s (album=%s, output=%s)", url, self.url, path)
+            raise DownloadFailed(f"Photo download failed for {url} (album={self.url}): {e}") from e
 
 
 @dataclass(kw_only=True, slots=True)
@@ -468,16 +484,19 @@ class GIF(BaseMedia):
         }
 
     async def download(self, configuration: DownloadConfigRAW) -> bool:
-        await self.load_fields("title", "content_url")
-        logger.info(f"Downloading GIF {self.title} to {configuration.path}")
-        config = copy.deepcopy(configuration)
-        if not config.no_title:
-            config.path = os.path.join(config.path, f"{strip_title(self.title)}.mp4")
-
         try:
+            await self.load_fields("title", "content_url")
+            logger.info(f"Downloading GIF {self.title} to {configuration.path}")
+            config = copy.deepcopy(configuration)
+            if not config.no_title:
+                config.path = os.path.join(config.path, f"{strip_title(self.title)}.mp4")
+
             return await self.core.legacy_download(url=self.content_url, configuration=config)
+        except DownloadCancelled:
+            raise
         except Exception as e:
-            raise DownloadFailed(str(e))
+            logger.exception("Download failed for %s: %s", self.url, e)
+            raise DownloadFailed(f"Download failed for {self.url}: {e}") from e
 
 
 @dataclass(kw_only=True, slots=True)
@@ -931,8 +950,9 @@ class Client:
             response = await self.core.request(url, method="POST", data=payload)
             data = response.json()
         except Exception as e:
+            logger.exception("Login request failed for %s", url)
             if throw:
-                raise LoginFailed(f"Login request failed: {e}")
+                raise LoginFailed(f"Login request failed for {url}: {e}") from e
             return False
 
         if not int(data.get("success", 0)):
@@ -959,6 +979,7 @@ class Client:
             response = await self.core.request(f"{HOST}user/log_user_cookie_consent", params=params)
             return response.json().get("success", False)
         except Exception:
+            logger.exception("Failed to update recommendations via %suser/log_user_cookie_consent", HOST)
             return False
 
     async def get_recommended(
@@ -1149,7 +1170,10 @@ async def _cli_download_video_generator(generator: AsyncGenerator, args: argpars
             if not can_download(state):
                 break
             if not result.succeeded:
-                logger.error("Skipping failed scrape result for %s: %s", result.url, result.error)
+                logger.error(
+                    "Skipping failed scrape result for %s: %s", result.url, result.error,
+                    exc_info=(type(result.error), result.error, result.error.__traceback__),
+                )
                 continue
             video = result.unwrap()
             await video.load_sources("html")
@@ -1204,6 +1228,7 @@ async def _cli_process_url(client: Client, url: str, args: argparse.Namespace, n
             await _cli_download_video_generator(obj.get_videos(pages=args.pages), args, no_title, state)
 
     except Exception as e:
+        logger.exception("CLI failed while processing %s", url)
         print(f"Error processing {url}: {e}")
 
 
@@ -1275,9 +1300,9 @@ def cli():
 
 
 def main():
+    configure_app_logging(level=logging.INFO)
     cli()
 
 
 if __name__ == "__main__":
     main()
-

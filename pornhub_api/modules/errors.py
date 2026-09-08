@@ -1,7 +1,8 @@
-class PornhubAPIError(Exception):
-    def __init__(self, msg: str = ""):
-        super().__init__(msg)
-        self.msg = msg
+from base_api.modules import errors as base_errors
+
+
+class PornhubAPIError(base_errors.ScraperException):
+    """Base for Pornhub-specific errors; also catchable as a shared scraper error."""
 
 
 class GifPendingReview(PornhubAPIError):
@@ -20,25 +21,25 @@ class ClientAlreadyLogged(PornhubAPIError):
     pass
 
 
-class NotFound(PornhubAPIError):
+class NotFound(base_errors.NotFound, PornhubAPIError):
     pass
 
 
-class NetworkError(PornhubAPIError):
+class NetworkError(base_errors.NetworkError, PornhubAPIError):
     pass
 
 
-class BotDetection(PornhubAPIError):
+class BotDetection(base_errors.BotDetection, PornhubAPIError):
     pass
 
 
-class ProxyError(PornhubAPIError):
+class ProxyError(base_errors.ProxyError, PornhubAPIError):
     pass
 
 
-class UnknownNetworkError(PornhubAPIError):
+class UnknownNetworkError(base_errors.UnknownNetworkError, PornhubAPIError):
     pass
 
 
-class DownloadFailed(PornhubAPIError):
+class DownloadFailed(base_errors.DownloadFailed, PornhubAPIError):
     pass

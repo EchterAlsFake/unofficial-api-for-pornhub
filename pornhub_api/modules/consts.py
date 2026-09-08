@@ -75,6 +75,7 @@ def get_m3u8_urls(media_definitions: list[dict] | None) -> dict[tuple[int, int],
             if width or height:
                 quality_urls[(width, height)] = url
         except Exception:
+            logger.warning("Skipping invalid HLS media definition for %s", q.get('videoUrl'), exc_info=True)
             continue
     return quality_urls
 
