@@ -67,6 +67,3 @@ module-root = ""
 
 [tool.pytest.ini_options]
 asyncio_default_test_loop_scope = "session"
-
-[tool.uv.sources]
-eaf-base-api = { path = "../eaf_base_api", editable = true }
