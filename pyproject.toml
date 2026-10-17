@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "unofficial-api-for-pornhub"
-version = "5.4.4"
+version = "5.4.5"
 description = "An asynchronous API wrapper and scraper for Pornhub"
 authors = [
   {name = 'Egsagon', email = "egsagon.git@gmail.com"},
@@ -40,7 +40,7 @@ dependencies = [
   "m3u8",
   "chompjs",
   "selectolax",
-  "eaf-base-api>=4.2.0",
+  "eaf-base-api>=4.2.2",
   "curl-cffi",
 ]
 

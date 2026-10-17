@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+from functools import partial
 import html
 import json
 import chompjs
@@ -26,6 +27,8 @@ import asyncio
 import argparse
 
 from pornhub_api.modules import errors as provider_errors
+from base_api import append_url_path, profile_base_url, replace_url_path, update_url_query
+from urllib.parse import urlsplit
 from base_api.modules.provider import fetch_content, download_errors, prepare_download_config
 from base_api.modules.logger import configure_app_logging, get_logger, log_context
 
@@ -122,6 +125,10 @@ async def get_html_content(core: BaseCore, url: str, *, owner=None) -> str:
 
 @dataclass(kw_only=True, slots=True)
 class UserHelper(BaseMedia):
+
+    def __post_init__(self):
+        profile_base_url(self.url, depth=2)
+
     url: str
     core: BaseCore
     user_id: str | None = media_field("html")
@@ -494,11 +501,11 @@ class UserHelper(BaseMedia):
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        base_url = re.sub(r"/videos(?:/upload)?/?$", "", self.url.rstrip("/"))
-        page_urls = [f"{base_url}/videos?page={page}" for page in range(1, pages + 1)]
+        base_url = profile_base_url(self.resolved_url or self.url)
+        page_urls = [update_url_query(append_url_path(base_url, "videos"), page=page) for page in range(1, pages + 1)]
         return _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_model_videos, iterator_config=iterator_config,
+            item_extractor=partial(extractor_model_videos, base_url=base_url), iterator_config=iterator_config,
         )
 
     def get_uploads(
@@ -506,11 +513,11 @@ class UserHelper(BaseMedia):
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        base_url = re.sub(r"/videos(?:/upload)?/?$", "", self.url.rstrip("/"))
-        page_urls = [f"{base_url}/videos/upload?page={page}" for page in range(1, pages + 1)]
+        base_url = profile_base_url(self.resolved_url or self.url)
+        page_urls = [update_url_query(append_url_path(base_url, "videos/upload"), page=page) for page in range(1, pages + 1)]
         return _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_model_uploads, iterator_config=iterator_config,
+            item_extractor=partial(extractor_model_uploads, base_url=base_url), iterator_config=iterator_config,
         )
 
     def get_gifs(
@@ -518,11 +525,11 @@ class UserHelper(BaseMedia):
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[GIF], None]:
-        base_url = re.sub(r"/gifs(?:/video)?/?$", "", self.url.rstrip("/"))
-        page_urls = [f"{base_url}/gifs/video?page={page}" for page in range(1, pages + 1)]
+        base_url = profile_base_url(self.resolved_url or self.url)
+        page_urls = [update_url_query(append_url_path(base_url, "gifs/video"), page=page) for page in range(1, pages + 1)]
         return _scrape_stream(
             core=self.core, constructor=GIF, target_page_urls=page_urls,
-            item_extractor=extractor_gifs, iterator_config=iterator_config,
+            item_extractor=partial(extractor_gifs, base_url=base_url), iterator_config=iterator_config,
         )
 
 
@@ -936,8 +943,8 @@ class Album(BaseMedia):
 
     async def get_photos(self, pages: int = 1) -> AsyncGenerator[dict[str, Any], None]:
         logger.info(f"Fetching photos for Album at {self.url} (pages: {pages})")
-        base_url = self.url.split("?")[0]
-        page_urls = [f"{base_url.rstrip('/')}?page={page}" for page in range(1, pages + 1)]
+        base_url = self.resolved_url or self.url
+        page_urls = [update_url_query(base_url, page=page) for page in range(1, pages + 1)]
         html_contents = await asyncio.gather(*(get_html_content(core=self.core, url=url, owner=self) for url in page_urls))
         for html in html_contents:
             for photo_data in self._parse_photos(html):
@@ -1677,6 +1684,10 @@ class GIF(BaseMedia):
 
 @dataclass(kw_only=True, slots=True)
 class Channel(BaseMedia):
+
+    def __post_init__(self):
+        profile_base_url(self.url, depth=2)
+
     url: str
     core: BaseCore
     name: str | None = media_field("html")
@@ -1946,10 +1957,11 @@ class Channel(BaseMedia):
         pages: int = 5,
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        page_urls = [f"{self.url.rstrip('/')}/videos?page={page}" for page in range(1, pages + 1)]
+        base_url = profile_base_url(self.resolved_url or self.url)
+        page_urls = [update_url_query(append_url_path(base_url, "videos"), page=page) for page in range(1, pages + 1)]
         return _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
+            item_extractor=partial(extractor_videos, base_url=base_url), iterator_config=iterator_config,
         )
 
     async def get_user(self, load_html: bool = True) -> User | None:
@@ -2325,13 +2337,14 @@ class Playlist(BaseMedia):
                 f"Cannot fetch videos for Playlist at {self.url}: missing playlist_id ({self.playlist_id}) or token ({self.token})"
             )
             return
+        base_url = replace_url_path(self.resolved_url or self.url, "/playlist/viewChunked")
         page_urls = [
-            f'https://www.pornhub.com/playlist/viewChunked?id={self.playlist_id}&token={self.token}&page={page}'
+            update_url_query(base_url, id=self.playlist_id, token=self.token, page=page)
             for page in range(1, pages + 1)
         ]
         async for result in _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_playlist, iterator_config=iterator_config,
+            item_extractor=partial(extractor_playlist, base_url=base_url), iterator_config=iterator_config,
         ):
             yield result
 
@@ -2400,6 +2413,8 @@ class Video(BaseMedia):
         if self.video_id is None:
             match = re.search(r"viewkey=([^&#]+)", self.url) or re.search(r"embed/([^&#/?]+)", self.url)
             self.video_id = match.group(1) if match else None
+        if urlsplit(self.url).path.startswith("/embed/") and self.video_id:
+            self.url = update_url_query(replace_url_path(self.url, "/view_video.php"), viewkey=self.video_id)
 
     async def _load_html(self) -> dict[str, object]:
         logger.debug(f"Fetching HTML for Video at {self.url}")
@@ -2408,7 +2423,7 @@ class Video(BaseMedia):
 
     async def _load_api(self) -> dict[str, object]:
         logger.debug(f"Fetching API data for Video {self.video_id}")
-        stuff = await get_html_content(url=f"https://www.pornhub.com/webmasters/video_by_id?id={self.video_id}", core=self.core, owner=self)
+        stuff = await get_html_content(url=update_url_query(replace_url_path(self.url, "/webmasters/video_by_id"), id=self.video_id), core=self.core, owner=self)
         return await asyncio.to_thread(self._extract_api, stuff)
 
     @staticmethod

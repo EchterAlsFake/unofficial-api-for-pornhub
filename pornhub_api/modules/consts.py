@@ -1,4 +1,5 @@
 from __future__ import annotations
+from urllib.parse import urljoin
 
 import re
 from base_api.modules.logger import get_logger
@@ -9,7 +10,6 @@ logger = get_logger(__name__)
 
 HEADERS = {
     'Accept': '*/*',
-    'Accept-Language': 'en,en-US',
     'Connection': 'keep-alive',
     'Referer': 'https://www.pornhub.com/',
     'Origin': 'https://www.pornhub.com',
@@ -80,7 +80,7 @@ def get_m3u8_urls(media_definitions: list[dict] | None) -> dict[tuple[int, int],
     return quality_urls
 
 
-def _extract_video_blocks(blocks: list) -> list[dict[str, Any]]:
+def _extract_video_blocks(blocks: list, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     results = []
     seen = set()
     for block in blocks:
@@ -90,7 +90,7 @@ def _extract_video_blocks(blocks: list) -> list[dict[str, Any]]:
         href = a_tag.attributes.get("href")
         if not href:
             continue
-        url = f"https://www.pornhub.com{href}"
+        url = urljoin(base_url, href)
         if url in seen:
             continue
         seen.add(url)
@@ -131,7 +131,7 @@ def _extract_video_blocks(blocks: list) -> list[dict[str, Any]]:
         if author_tag:
             author_href = author_tag.attributes.get("href")
             if author_href:
-                author_link = f"https://www.pornhub.com{author_href}" if author_href.startswith("/") else author_href
+                author_link = urljoin(base_url, author_href)
             author_name = author_tag.text(strip=True)
             if author_name:
                 author_information = {"name": author_name}
@@ -150,7 +150,7 @@ def _extract_video_blocks(blocks: list) -> list[dict[str, Any]]:
     return results
 
 
-def extractor_gifs(html_content: str) -> list[dict[str, str]]:
+def extractor_gifs(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, str]]:
     parser = LexborHTMLParser(html_content)
     container = parser.css_first(
         "div.gifsWrapperProfile, div.gifsWrapper.hideLastItemLarge, "
@@ -161,24 +161,24 @@ def extractor_gifs(html_content: str) -> list[dict[str, str]]:
     for a_tag in container.css("a[href]"):
         href = a_tag.attributes.get("href")
         if isinstance(href, str) and href.startswith("/gif/") and any(c.isdigit() for c in href):
-            unique_urls.add(f"https://www.pornhub.com{href}")
+            unique_urls.add(urljoin(base_url, href))
 
     return [{"url": url} for url in unique_urls]
 
 
-def extractor_model_uploads(html_content: str) -> list[dict[str, Any]]:
+def extractor_model_uploads(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     parser = LexborHTMLParser(html_content)
     container = parser.css_first("div.profileVids") or parser
-    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"))
+    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"), base_url)
 
 
-def extractor_model_videos(html_content: str) -> list[dict[str, Any]]:
+def extractor_model_videos(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     parser = LexborHTMLParser(html_content)
     container = parser.css_first("#mostRecentVideosSection") or parser
-    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"))
+    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"), base_url)
 
 
-def extractor_videos(html_content: str) -> list[dict[str, Any]]:
+def extractor_videos(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     results = []
     parser = LexborHTMLParser(html_content)
     video_blocks = parser.css("li > div.pcVideoListItem, li > div.videoBox")
@@ -188,7 +188,7 @@ def extractor_videos(html_content: str) -> list[dict[str, Any]]:
         for a_tag in parser.css('a[href^="/view_video.php?viewkey="]'):
             href = a_tag.attributes.get("href")
             if isinstance(href, str) and href:
-                url = f"https://www.pornhub.com{href}"
+                url = urljoin(base_url, href)
                 if url not in seen:
                     seen.add(url)
                     results.append({"url": url})
@@ -202,7 +202,7 @@ def extractor_videos(html_content: str) -> list[dict[str, Any]]:
         href = a_tag.attributes.get("href")
         if not href:
             continue
-        url = f"https://www.pornhub.com{href}"
+        url = urljoin(base_url, href)
         if url in seen:
             continue
         seen.add(url)
@@ -228,18 +228,18 @@ def extractor_videos(html_content: str) -> list[dict[str, Any]]:
     return results
 
 
-def extractor_playlist(html_content: str) -> list[dict[str, Any]]:
+def extractor_playlist(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     parser = LexborHTMLParser(html_content)
     container = parser.css_first(
         "div.videos.row-5-thumbs.search-video-thumbs.scrollLazyload.js-videoPlaylist.viewPlaylist"
     ) or parser
-    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"))
+    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"), base_url)
 
 
-def extractor_users(html_content: str) -> list[dict[str, str]]:
+def extractor_users(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, str]]:
     parser = LexborHTMLParser(html_content)
     urls = {
-        f"https://www.pornhub.com{href}"
+        urljoin(base_url, href)
         for a_tag in parser.css("a.userLink[href]")
         if (href := a_tag.attributes.get("href")) and isinstance(href, str) and href.startswith("/")
     }
