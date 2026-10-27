@@ -45,9 +45,14 @@ def parse_quality(value: Any) -> int:
 
 def parse_quality_from_url(url: str) -> int:
     for part in url.split('/'):
-        if 'P_' in part or 'p_' in part:
+        if 'P' in part or 'p' in part:
+            m = re.search(r'(\d+)[pP]', part)
+            if m:
+                return int(m.group(1))
             prefix = part.split('P_', 1)[0].split('p_', 1)[0]
-            return parse_quality(prefix)
+            val = parse_quality(prefix)
+            if val:
+                return val
     return 0
 
 
@@ -63,12 +68,10 @@ def get_m3u8_urls(media_definitions: list[dict] | None) -> dict[tuple[int, int],
         if not isinstance(q, dict) or q.get('format') != 'hls' or not q.get('videoUrl'):
             continue
         try:
-            width = int(q.get('width') or 0)
-            height = int(q.get('height') or 0)
             url = q['videoUrl']
+            height = parse_quality(q.get('height')) or parse_quality(q.get('quality')) or parse_quality_from_url(url)
+            width = parse_quality(q.get('width'))
 
-            if not height:
-                height = parse_quality(q.get('quality')) or parse_quality_from_url(url)
             if not width and height:
                 width = estimate_width(height)
 
@@ -168,24 +171,56 @@ def extractor_gifs(html_content: str, base_url: str = "https://www.pornhub.com")
 
 def extractor_model_uploads(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     parser = LexborHTMLParser(html_content)
-    container = parser.css_first("div.profileVids") or parser
-    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"), base_url)
+    container = parser.css_first("div.profileVids")
+    blocks = container.css("li.pcVideoListItem, li.videoBox") if container else []
+    if not blocks:
+        blocks = parser.css("li.pcVideoListItem, li.videoBox")
+    return _extract_video_blocks(blocks, base_url)
 
 
 def extractor_model_videos(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     parser = LexborHTMLParser(html_content)
-    container = parser.css_first("#mostRecentVideosSection") or parser
-    return _extract_video_blocks(container.css("li.pcVideoListItem, li.videoBox"), base_url)
+    container = parser.css_first("#mostRecentVideosSection")
+    blocks = container.css("li.pcVideoListItem, li.videoBox") if container else []
+    if not blocks:
+        blocks = parser.css("li.pcVideoListItem, li.videoBox")
+    return _extract_video_blocks(blocks, base_url)
+
+
+def extractor_hubtraffic(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
+    import json
+    try:
+        data = json.loads(html_content)
+        videos = data.get("videos", [])
+        results = []
+        for v in videos:
+            if isinstance(v, dict) and v.get("url"):
+                results.append({
+                    "url": v["url"],
+                    "video_id": v.get("video_id"),
+                    "title": v.get("title") or "",
+                    "duration": v.get("duration"),
+                    "thumbnail": v.get("default_thumb") or v.get("thumb"),
+                    "views": str(v.get("views", "0")),
+                    "publish_date": v.get("publish_date"),
+                })
+        return results
+    except Exception:
+        logger.warning("Failed to parse HubTraffic search JSON", exc_info=True)
+        return []
 
 
 def extractor_videos(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     results = []
     parser = LexborHTMLParser(html_content)
-    video_blocks = parser.css("li > div.pcVideoListItem, li > div.videoBox")
+    video_blocks = parser.css(
+        "li.pcVideoListItem, li.videoBox, li > div.pcVideoListItem, li > div.videoBox, "
+        "div.pcVideoListItem, div.videoBox"
+    )
 
     if not video_blocks:
         seen = set()
-        for a_tag in parser.css('a[href^="/view_video.php?viewkey="]'):
+        for a_tag in parser.css('a[href*="view_video.php?viewkey="], a[href*="viewkey="]'):
             href = a_tag.attributes.get("href")
             if isinstance(href, str) and href:
                 url = urljoin(base_url, href)

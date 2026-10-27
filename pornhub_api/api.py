@@ -71,6 +71,7 @@ from pornhub_api.modules.errors import (
 from pornhub_api.modules.consts import (
     extractor_model_videos,
     extractor_videos,
+    extractor_hubtraffic,
     extractor_gifs,
     extractor_playlist,
     extractor_users,
@@ -328,17 +329,20 @@ class UserHelper(BaseMedia):
         # 10. Subscribers & Views
         subscribers = None
         subscribers_count = None
-        sub_box = lexbor.css_first(".infoBox[data-title*='Subscribers'], .infoBox.subscribers, [data-title*='Subscribers']")
+        sub_box = lexbor.css_first(
+            ".infoBox.subscribers, .infoBox[data-title*='Subscriber'], "
+            ".infoBox[data-title*='Abonnent'], .infoBox[data-title*='Abonné'], .infoBox[data-title*='Suscriptor']"
+        )
         if sub_box:
             dt = sub_box.attributes.get("data-title") or ""
-            m_s = re.search(r"Subscribers:\s*([\d,]+)", dt)
+            m_s = re.search(r":\s*([\d,\.]+)", dt)
             if m_s:
                 subscribers = m_s.group(1)
-                subscribers_count = int(subscribers.replace(",", ""))
+                subscribers_count = int(re.sub(r"[^\d]", "", subscribers))
         if not subscribers:
             for li in lexbor.css(".subViewsInfoContainer li"):
                 txt = li.text(strip=True).lower()
-                if "subscriber" in txt:
+                if any(k in txt for k in ("subscriber", "abonnent", "abonné", "suscriptor", "iscritt")):
                     num_el = li.css_first("span.number")
                     if num_el:
                         subscribers = num_el.text(strip=True)
@@ -354,18 +358,25 @@ class UserHelper(BaseMedia):
         # 11. Video Views
         video_views = None
         video_views_count = None
-        vv_box = lexbor.css_first(".infoBox[data-title*='Video views'], .infoBox.videoViews, [data-title*='Video views']")
+        vv_box = lexbor.css_first(
+            ".infoBox.videoViews, .infoBox[data-title*='Video views'], "
+            ".infoBox[data-title*='Video-Aufrufe'], .infoBox[data-title*='Video-Ansichten'], "
+            ".infoBox[data-title*='Vues'], .infoBox[data-title*='Reproducciones']"
+        )
         if vv_box:
             dt = vv_box.attributes.get("data-title") or ""
-            m_v = re.search(r"Video views:\s*([\d,]+)", dt)
+            m_v = re.search(r":\s*([\d,\.]+)", dt)
             if m_v:
                 video_views = m_v.group(1)
-                video_views_count = int(video_views.replace(",", ""))
-        if not video_views and "Video Views:" in info:
-            video_views = info["Video Views:"]
-            clean = re.sub(r"[^\d]", "", video_views)
-            if clean:
-                video_views_count = int(clean)
+                video_views_count = int(re.sub(r"[^\d]", "", video_views))
+        if not video_views:
+            for vv_key in ("Video Views:", "Video Views", "Video-Aufrufe:", "Video-Ansichten:", "Vues de la vidéo:"):
+                if vv_key in info:
+                    video_views = info[vv_key]
+                    clean = re.sub(r"[^\d]", "", video_views)
+                    if clean:
+                        video_views_count = int(clean)
+                    break
         if not video_views and vv_box:
             big_el = vv_box.css_first("span.big")
             if big_el:
@@ -374,7 +385,10 @@ class UserHelper(BaseMedia):
         # 12. Profile Views
         profile_views = None
         profile_views_count = None
-        for pv_key in ("Profile Views:", "Pornstar Profile Views:", "Profile Views", "Pornstar Profile Views"):
+        for pv_key in (
+            "Profile Views:", "Pornstar Profile Views:", "Profile Views", "Pornstar Profile Views",
+            "Profilansichten:", "Pornostar Profilaufrufe:", "Vues du profil:", "Visitas al perfil:"
+        ):
             if pv_key in info:
                 profile_views = info[pv_key]
                 clean = re.sub(r"[^\d]", "", profile_views)
@@ -385,7 +399,9 @@ class UserHelper(BaseMedia):
         # 13. Videos Watched
         videos_watched = None
         videos_watched_count = None
-        for vw_key in ("Videos Watched:", "Videos Watched"):
+        for vw_key in (
+            "Videos Watched:", "Videos Watched", "Angesehene Videos:", "Vidéos regardées:", "Vídeos vistos:"
+        ):
             if vw_key in info:
                 videos_watched = info[vw_key]
                 clean = re.sub(r"[^\d]", "", videos_watched)
@@ -395,7 +411,7 @@ class UserHelper(BaseMedia):
         if not videos_watched:
             for li in lexbor.css(".subViewsInfoContainer li"):
                 txt = li.text(strip=True).lower()
-                if "watched" in txt:
+                if any(w in txt for w in ("watched", "angesehene", "regardé", "visto")):
                     num_el = li.css_first("span.number")
                     if num_el:
                         videos_watched = num_el.text(strip=True)
@@ -448,9 +464,30 @@ class UserHelper(BaseMedia):
             external_link_text = txt_el.text(strip=True) if txt_el else None
 
         # 16. Info field helpers
+        _ALIASES = {
+            "gender": ("gender", "geschlecht", "genre", "género", "sesso"),
+            "birth place": ("birth place", "geburtsort", "lieu de naissance", "lugar de nacimiento", "luogo di nascita"),
+            "relationship status": ("relationship status", "beziehungsstatus", "statut de la relation", "estado civil"),
+            "interested in": ("interested in", "interessiert an", "intéressé par", "interesado en", "interessato a"),
+            "height": ("height", "größe", "taille", "altura", "altezza"),
+            "weight": ("weight", "gewicht", "poids", "peso"),
+            "ethnicity": ("ethnicity", "ethnie", "ethnicité", "origen étnico", "etnia"),
+            "hair color": ("hair color", "haarfarbe", "couleur des cheveux", "color de pelo", "colore dei capelli"),
+            "eye color": ("eye color", "augenfarbe", "couleur des yeux", "color de ojos", "colore degli occhi"),
+            "measurements": ("measurements", "maße", "mensurations", "medidas", "misure"),
+            "fake boobs": ("fake boobs", "echte brüste", "faux seins", "pechos falsos", "seno finto"),
+            "tattoos": ("tattoos", "tatouages", "tatuajes", "tatuaggi"),
+            "piercings": ("piercings", "perforaciones"),
+            "career status": ("career status", "karrierestatus", "statut de carrière", "estado de su carrera", "stato della carriera"),
+            "career start and end": ("career start and end", "karrierestart und -ende", "début et fin de carrière", "inicio y final de su carrera"),
+            "star sign": ("star sign", "sternzeichen", "signe astrologique", "signo del zodíaco", "segno zodiacale"),
+        }
+
         def _get_info(key_name: str) -> str | None:
+            targets = _ALIASES.get(key_name.lower(), (key_name.lower(),))
             for k, v in info.items():
-                if k.rstrip(":").strip().lower() == key_name.lower():
+                clean_k = k.rstrip(":").strip().lower()
+                if any(clean_k == t for t in targets):
                     return v
             return None
 
@@ -514,7 +551,8 @@ class UserHelper(BaseMedia):
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
         base_url = profile_base_url(self.resolved_url or self.url)
-        page_urls = [update_url_query(append_url_path(base_url, "videos/upload"), page=page) for page in range(1, pages + 1)]
+        subpath = "videos/public" if "/users/" in base_url else "videos/upload"
+        page_urls = [update_url_query(append_url_path(base_url, subpath), page=page) for page in range(1, pages + 1)]
         return _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
             item_extractor=partial(extractor_model_uploads, base_url=base_url), iterator_config=iterator_config,
@@ -526,7 +564,8 @@ class UserHelper(BaseMedia):
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[GIF], None]:
         base_url = profile_base_url(self.resolved_url or self.url)
-        page_urls = [update_url_query(append_url_path(base_url, "gifs/video"), page=page) for page in range(1, pages + 1)]
+        subpath = "gifs" if "/users/" in base_url else "gifs/video"
+        page_urls = [update_url_query(append_url_path(base_url, subpath), page=page) for page in range(1, pages + 1)]
         return _scrape_stream(
             core=self.core, constructor=GIF, target_page_urls=page_urls,
             item_extractor=partial(extractor_gifs, base_url=base_url), iterator_config=iterator_config,
@@ -757,13 +796,13 @@ class Album(BaseMedia):
         votes = votes_el.text(strip=True) if votes_el else None
         vote_count = None
         if votes:
-            m = re.search(r"\(([\d,]+)\s*votes?\)", votes)
+            m = re.search(r"\(([\d,\.]+)", votes)
             if m:
-                vote_count = int(m.group(1).replace(",", ""))
+                vote_count = int(re.sub(r"[^\d]", "", m.group(1)))
         if vote_count is None:
-            m = re.search(r"\(([\d,]+)\s*votes?\)", html_content)
+            m = re.search(r"\(([\d,\.]+)\s*(?:votes?|stimmen|votos|voti|suffrages)?\)", html_content, re.IGNORECASE)
             if m:
-                vote_count = int(m.group(1).replace(",", ""))
+                vote_count = int(re.sub(r"[^\d]", "", m.group(1)))
         if not votes:
             if vote_count is not None:
                 votes = f"({vote_count} votes)"
@@ -776,14 +815,14 @@ class Album(BaseMedia):
         if views_el:
             views = views_el.text(strip=True)
         if not views:
-            m = re.search(r"([\d,]+\s*views)", html_content, re.IGNORECASE)
+            m = re.search(r"([\d,\.]+\s*(?:views|aufrufe|vues|visitas))", html_content, re.IGNORECASE)
             if m:
                 views = m.group(1)
         views_count = None
         if views:
-            m = re.search(r"([\d,]+)\s*views", views, re.IGNORECASE)
+            m = re.search(r"([\d,\.]+)", views)
             if m:
-                views_count = int(m.group(1).replace(",", ""))
+                views_count = int(re.sub(r"[^\d]", "", m.group(1)))
         if not views:
             logger.warning(f"Failed to extract views for Album at {url}")
 
@@ -951,6 +990,15 @@ class Album(BaseMedia):
                 yield photo_data
 
     async def download_photo(self, url: str, path: str) -> bool:
+        if os.path.isdir(path):
+            filename = None
+            if m := re.search(r"/photo/(\d+)", url):
+                filename = f"photo_{m.group(1)}.jpg"
+            elif m := re.search(r"(\d+)\.(jpg|jpeg|png|webp)", url):
+                filename = f"photo_{m.group(1)}.{m.group(2)}"
+            else:
+                filename = "photo.jpg"
+            path = os.path.join(path, filename)
         with log_context(self, url):
             logger.info(f"Downloading photo {url} to {path}")
             try:
@@ -1306,20 +1354,26 @@ class Short(BaseMedia):
             "direct_video_url": direct_video_url,
         }
 
-    async def get_author(self, load_html: bool = True) -> UserHelper | None:
+    async def get_author(self, load_html: bool = True) -> User | Pornstar | Channel | Model | None:
         author_link = await self.get_field("author_link")
         if not author_link:
             logger.warning(f"No author_link found for Short at {self.url}")
             return None
-        if "/model/" in author_link:
-            star = Model(url=author_link, core=self.core)
+        author_cls: type[User | Pornstar | Channel | Model] = User
+        if "/channels/" in author_link:
+            author_cls = Channel
+        elif "/model/" in author_link:
+            author_cls = Model
         elif "/pornstar/" in author_link:
-            star = Pornstar(url=author_link, core=self.core)
-        else:
-            star = User(url=author_link, core=self.core)
+            author_cls = Pornstar
+        star = author_cls(url=author_link, core=self.core)
         if load_html:
             await star.load_sources("html")
         return star
+
+    @property
+    async def author(self) -> User | Pornstar | Channel | Model | None:
+        return await self.get_author(load_html=True)
 
     async def get_video(self, load_html: bool = False, load_api: bool = True) -> Video | None:
         video_url = await self.get_field("video_url")
@@ -1333,6 +1387,10 @@ class Short(BaseMedia):
         video = Video(url=video_url, core=self.core)
         await video.load_sources(*_requested_sources(html=load_html, api=load_api))
         return video
+
+    @property
+    def short_id(self) -> str | None:
+        return self.video_key or self.video_id
 
     async def download(self, configuration: DownloadConfigHLS) -> bool | DownloadReport:
         return await _download_hls(self, configuration)
@@ -1511,11 +1569,10 @@ class GIF(BaseMedia):
         # 7. Votes
         vote_container = img_section if img_section else lexbor
         vote_count_el = vote_container.css_first("div.voteCount span, span.voteCountNumber, div.voteCount")
-        vote_count = (
-            vote_count_el.text(strip=True).replace("(", "").replace(")", "").replace("votes", "").strip()
-            if vote_count_el
-            else None
-        )
+        vote_count = None
+        if vote_count_el:
+            digits = re.sub(r"[^\d]", "", vote_count_el.text(strip=True))
+            vote_count = digits if digits else None
 
         vote_percentage_el = vote_container.css_first("div.votePercentage span, div.votePercentage")
         vote_percentage = (
@@ -1650,15 +1707,26 @@ class GIF(BaseMedia):
             "description": description,
         }
 
-    async def get_author(self, load_html: bool = True) -> User | None:
+    async def get_author(self, load_html: bool = True) -> User | Pornstar | Channel | Model | None:
         author_link = await self.get_field("author_link")
         if not author_link:
             logger.warning(f"No author_link found for GIF at {self.url}")
             return None
-        user = User(core=self.core, url=author_link)
+        author_cls: type[User | Pornstar | Channel | Model] = User
+        if "/channels/" in author_link:
+            author_cls = Channel
+        elif "/model/" in author_link:
+            author_cls = Model
+        elif "/pornstar/" in author_link:
+            author_cls = Pornstar
+        user = author_cls(core=self.core, url=author_link)
         if load_html:
             await user.load_sources("html")
         return user
+
+    @property
+    async def author(self) -> User | Pornstar | Channel | Model | None:
+        return await self.get_author(load_html=True)
 
     async def get_source_video(self, load_html: bool = True) -> Video | None:
         source_url = await self.get_field("source_video_url")
@@ -1798,24 +1866,28 @@ class Channel(BaseMedia):
                 continue
             label = span.text(strip=True).upper()
             val = info.text(strip=True).replace(span.text(strip=True), "").strip()
-            if "VIDEO VIEWS" in label:
+            if any(k in label for k in ("VIDEO VIEWS", "VIDEO-ANSICHTEN", "VUES DE VIDÉO", "REPRODUCCIONES")):
                 video_views = val
-            elif "SUBSCRIBER" in label:
+            elif any(k in label for k in ("SUBSCRIBER", "ABONNENT", "ABONNÉ", "SUSCRIPTOR", "ISCRITT")):
                 subscribers = val
             elif "VIDEO" in label:
                 total_videos = val
-            elif "RANK" in label:
+            elif any(k in label for k in ("RANK", "RANG", "POSIZIONE", "PUESTO")):
                 rank = val
 
         # Fallback to index-based if missing labels
+        def _get_val(el):
+            sp = el.css_first("span")
+            return el.text(strip=True).replace(sp.text(strip=True), "").strip() if sp else el.text(strip=True)
+
         if video_views is None and len(info_elements) > 0:
-            video_views = info_elements[0].text(strip=True)
+            video_views = _get_val(info_elements[0])
         if subscribers is None and len(info_elements) > 1:
-            subscribers = info_elements[1].text(strip=True)
+            subscribers = _get_val(info_elements[1])
         if total_videos is None and len(info_elements) > 2:
-            total_videos = info_elements[2].text(strip=True)
+            total_videos = _get_val(info_elements[2])
         if rank is None and len(info_elements) > 3:
-            rank = info_elements[3].text(strip=True).replace("RANK", "").strip()
+            rank = re.sub(r"[^\d]", "", _get_val(info_elements[3])) or _get_val(info_elements[3])
 
         if not video_views:
             logger.warning(f"Failed to extract video_views for Channel at {url}")
@@ -2400,6 +2472,7 @@ class Video(BaseMedia):
     rating_percent: str | float | None = media_field("api", "html")
 
     # Author details
+    author_name: str | None = media_field("html")
     author_thumbnail: str | None = media_field("html")
     author_link: str | None = media_field("html")
     author_information: dict[str, Any] | None = media_field("html")
@@ -2410,6 +2483,14 @@ class Video(BaseMedia):
     }
 
     def __post_init__(self) -> None:
+        if not self.url.startswith(("http://", "https://")):
+            if self.url.startswith("/"):
+                self.url = f"https://www.pornhub.com{self.url}"
+            elif "viewkey=" in self.url:
+                self.url = f"https://www.pornhub.com/{self.url.lstrip('/')}"
+            else:
+                self.video_id = self.url
+                self.url = f"https://www.pornhub.com/view_video.php?viewkey={self.url}"
         if self.video_id is None:
             match = re.search(r"viewkey=([^&#]+)", self.url) or re.search(r"embed/([^&#/?]+)", self.url)
             self.video_id = match.group(1) if match else None
@@ -2751,6 +2832,7 @@ class Video(BaseMedia):
             "segment": segment,
             "rating_percent": rating_percent,
             "description": description,
+            "author_name": author_name,
             "author_thumbnail": author_thumbnail,
             "author_link": author_link,
             "author_information": author_information,
@@ -2802,8 +2884,7 @@ class Video(BaseMedia):
             "segment": video.get("segment"),
         }
 
-    @property
-    async def author(self, load_html: bool = True) -> Pornstar | Channel | Model | User | None:
+    async def get_author(self, load_html: bool = True) -> Pornstar | Channel | Model | User | None:
         author_link = await self.get_field("author_link")
         if not author_link:
             return None
@@ -2821,6 +2902,10 @@ class Video(BaseMedia):
         if load_html:
             await author.load_sources("html")
         return author
+
+    @property
+    async def author(self) -> Pornstar | Channel | Model | User | None:
+        return await self.get_author(load_html=True)
 
     async def download(self, configuration: DownloadConfigHLS) -> bool | DownloadReport:
         return await _download_hls(self, configuration)
@@ -3157,7 +3242,7 @@ class Client:
 
         return _scrape_stream(
             core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
+            item_extractor=extractor_hubtraffic, iterator_config=iterator_config,
         )
 
 
@@ -3190,14 +3275,14 @@ async def _cli_download_video_generator(generator: AsyncGenerator, args: argpars
 
 async def _cli_process_url(client: Client, url: str, args: argparse.Namespace, no_title: bool, state: dict):
     try:
-        if "view_video.php" in url:
+        if "view_video.php" in url or "viewkey=" in url or "/embed/" in url:
             if not can_download(state):
                 return
             video = await client.get_video(url, load_html=True)
             await video.download(_resolve_hls_config(video, args, no_title))
             state["downloaded"] += 1
 
-        elif "/short/" in url:
+        elif "/shorties/" in url or "/short/" in url:
             if not can_download(state):
                 return
             short = await client.get_short(url)
@@ -3216,7 +3301,9 @@ async def _cli_process_url(client: Client, url: str, args: argparse.Namespace, n
             async for photo in album.get_photos(pages=args.pages):
                 if not can_download(state):
                     break
-                await album.download_photo(photo["download_url"], path=args.output)
+                photo_name = f"photo_{photo.get('photo_id') or 'unknown'}.jpg"
+                dest_path = os.path.join(args.output, photo_name)
+                await album.download_photo(photo["download_url"], path=dest_path)
                 state["downloaded"] += 1
 
         else:
@@ -3225,6 +3312,7 @@ async def _cli_process_url(client: Client, url: str, args: argparse.Namespace, n
                 "/model/": client.get_model,
                 "/users/": client.get_user,
                 "/channels/": client.get_channel,
+                "/playlist/": client.get_playlist,
                 "/playlists/": client.get_playlist,
             }
             handler = next((fn for prefix, fn in resolvers.items() if prefix in url), None)

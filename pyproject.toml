@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "unofficial-api-for-pornhub"
-version = "5.4.5"
+version = "5.4.6"
 description = "An asynchronous API wrapper and scraper for Pornhub"
 authors = [
   {name = 'Egsagon', email = "egsagon.git@gmail.com"},
@@ -40,7 +40,7 @@ dependencies = [
   "m3u8",
   "chompjs",
   "selectolax",
-  "eaf-base-api>=4.2.2",
+  "eaf-base-api>=4.2.5",
   "curl-cffi",
 ]
 
@@ -66,3 +66,9 @@ module-root = ""
 
 [tool.pytest.ini_options]
 asyncio_default_test_loop_scope = "session"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.1",
+]

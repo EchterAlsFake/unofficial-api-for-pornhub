@@ -94,9 +94,9 @@ async def test_user(client):
     assert isinstance(user.videos_watched, str) and len(user.videos_watched) > 0
 
 
-MODEL_HTML_PATH = "/home/asuna/.gemini/antigravity-cli/brain/2e362ae0-5230-40de-bf9f-f120274cd77c/scratch/model_hottiestwo.html"
-PORNSTAR_HTML_PATH = "/home/asuna/.gemini/antigravity-cli/brain/2e362ae0-5230-40de-bf9f-f120274cd77c/scratch/pornstar_dannyd.html"
-USER_HTML_PATH = "/home/asuna/.gemini/antigravity-cli/brain/2e362ae0-5230-40de-bf9f-f120274cd77c/scratch/user_chappy.html"
+MODEL_HTML_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "model_hottiestwo.html")
+PORNSTAR_HTML_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "pornstar_dannyd.html")
+USER_HTML_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "user_chappy.html")
 
 
 def test_user_extract_model_sample():

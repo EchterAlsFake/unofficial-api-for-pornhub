@@ -9,7 +9,7 @@ def client() -> Client:
     return Client()
 
 
-SAMPLE_HTML_PATH = "/home/asuna/.gemini/antigravity-cli/brain/2e362ae0-5230-40de-bf9f-f120274cd77c/scratch/album_sample.html"
+SAMPLE_HTML_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "album_sample.html")
 
 
 @pytest.mark.asyncio

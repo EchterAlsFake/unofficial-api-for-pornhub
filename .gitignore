@@ -2,3 +2,14 @@
 build/*
 src/test*.py
 docs/build/*
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+.venv/
+dist/
+*.log
+*.mp4
+*.mp4.tmp
