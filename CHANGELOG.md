@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.4.7 — 2026-11-12
+
+- Retry expired HLS playlists once, then refresh the PornHub session and video page before retrying with a new playlist.
+
 ## 5.4.6 — 2026-10-27
 
 - Parse HubTraffic search results as JSON instead of treating them as HTML.

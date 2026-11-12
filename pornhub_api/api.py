@@ -16,13 +16,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from __future__ import annotations
 
+import copy
+import html
+import json
+import logging
 import os
 import re
 from functools import partial
-import html
-import json
 import chompjs
-import logging
 import asyncio
 import argparse
 
@@ -40,9 +41,11 @@ from selectolax.lexbor import LexborHTMLParser
 from base_api.modules.static_functions import strip_title
 from base_api.modules.type_hints import DownloadReport
 from base_api.modules.config import IteratorConfig
+from base_api.modules.errors import ResourceGone
 from base_api import (
     BaseCore,
     BaseMedia,
+    CachePolicy,
     DownloadConfigHLS,
     DownloadConfigRAW,
     ErrorMode,
@@ -113,10 +116,116 @@ async def _download_hls(media: BaseMedia, configuration: DownloadConfigHLS) -> b
         raise DownloadFailed(f"No m3u8 playlist found for {media.url}")
     media_title = media.title or f"{type(media).__name__.lower()}_{getattr(media, 'video_key', None) or getattr(media, 'video_id', None) or 'unknown'}"
     logger.info(f"Downloading {type(media).__name__} {media_title} to {configuration.path}")
-    config = prepare_download_config(configuration, strip_title(media_title))
-    config.m3u8_base_url = media.m3u8_base_url
+    def make_config(m3u8_base_url: str) -> DownloadConfigHLS:
+        config = prepare_download_config(configuration, strip_title(media_title))
+        config.m3u8_base_url = m3u8_base_url
+        return config
 
-    return await media.core.download(configuration=config)
+    async def download(core: BaseCore, m3u8_base_url: str) -> bool | DownloadReport:
+        return await core.download(configuration=make_config(m3u8_base_url))
+
+    master_url = media.m3u8_base_url
+    try:
+        return await download(media.core, master_url)
+    except Exception as first_error:
+        if not _is_hls_manifest_gone(first_error):
+            raise
+
+        logger.warning(
+            "PornHub returned 410 for an HLS playlist; retrying it once with the current session for %s",
+            media.url,
+        )
+        try:
+            return await download(media.core, master_url)
+        except Exception as second_error:
+            if not _is_hls_manifest_gone(second_error):
+                raise
+
+            logger.warning(
+                "PornHub returned 410 again; refreshing the session and video playlist for %s",
+                media.url,
+            )
+            return await _download_hls_with_fresh_session(
+                media=media,
+                configuration=configuration,
+                media_title=media_title,
+                previous_error=second_error,
+            )
+
+
+def _is_hls_manifest_gone(error: BaseException) -> bool:
+    """Return true only for a 410 raised while fetching an HLS playlist."""
+    pending = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+
+        if isinstance(current, ResourceGone):
+            match = re.search(r"for URL:\s*(\S+)", str(current))
+            if match and urlsplit(match.group(1)).path.lower().rstrip("/").endswith(".m3u8"):
+                return True
+
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+    return False
+
+
+def _new_pornhub_session_client(core: BaseCore) -> tuple[BaseCore, Client]:
+    """Create an isolated fresh client while retaining the caller's settings and cookies."""
+    core.initialize_session()
+    current_session = core.session
+    assert current_session is not None
+
+    configuration = copy.copy(core.configuration)
+    cookies = dict(configuration.cookies or {})
+    cookies.update(current_session.cookies.get_dict())
+    configuration.cookies = cookies
+
+    fresh_core = BaseCore(configuration=configuration)
+    fresh_client = Client(core=fresh_core)
+    assert fresh_core.session is not None
+    fresh_core.session.headers.update(dict(current_session.headers))
+    return fresh_core, fresh_client
+
+
+async def _download_hls_with_fresh_session(
+    *,
+    media: BaseMedia,
+    configuration: DownloadConfigHLS,
+    media_title: str,
+    previous_error: BaseException,
+) -> bool | DownloadReport:
+    """Reload a fresh HLS master and retry once on an isolated session."""
+    fresh_core, _fresh_client = _new_pornhub_session_client(media.core)
+    try:
+        html_content = await fresh_core.fetch_text(
+            media.url,
+            cache_policy=CachePolicy.BYPASS,
+        )
+        extracted = await asyncio.to_thread(
+            media._extract_html,
+            html_content,
+            media.url,
+        )
+        fresh_master_url = extracted.get("m3u8_base_url")
+        if not fresh_master_url:
+            raise DownloadFailed(
+                f"No fresh HLS playlist found after refreshing {media.url}"
+            ) from previous_error
+
+        fresh_configuration = prepare_download_config(
+            configuration,
+            strip_title(media_title),
+        )
+        fresh_configuration.m3u8_base_url = fresh_master_url
+        return await fresh_core.download(configuration=fresh_configuration)
+    finally:
+        await fresh_core.close()
 
 
 async def get_html_content(core: BaseCore, url: str, *, owner=None) -> str:
