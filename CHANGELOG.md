@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.4.8 - 2026-11-14
+
+- Reject an unmatched explicitly requested Short instead of returning another item from the page.
+
 ## 5.4.7 — 2026-11-12
 
 - Retry expired HLS playlists once, then refresh the PornHub session and video page before retrying with a new playlist.

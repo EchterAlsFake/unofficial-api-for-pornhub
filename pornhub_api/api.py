@@ -1216,7 +1216,7 @@ class Short(BaseMedia):
                     if item.get("vkey") == requested_vkey or str(item.get("videoId")) == requested_vkey:
                         metadata = item
                         break
-            if not metadata:
+            if not metadata and not requested_vkey:
                 for item in parsed_shorties:
                     if item.get("vkey") or item.get("videoTitle"):
                         metadata = item
@@ -1232,8 +1232,10 @@ class Short(BaseMedia):
                     parent = parent.parent
                 if parent:
                     target_slide = parent
-        if not target_slide:
+        if not target_slide and not requested_vkey:
             target_slide = parser.css_first('.slideWrapper.active, .slideWrapper:first-child, .slideWrapper')
+        if requested_vkey and not metadata and target_slide is None:
+            raise ValueError("Requested short was not found in the response")
 
         # Title
         title = metadata.get("videoTitle")
