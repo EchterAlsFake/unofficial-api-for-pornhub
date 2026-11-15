@@ -43,3 +43,7 @@ class UnknownNetworkError(base_errors.UnknownNetworkError, PornhubAPIError):
 
 class DownloadFailed(base_errors.DownloadFailed, PornhubAPIError):
     pass
+
+
+class SourcesUnavailable(DownloadFailed):
+    """Neither HLS nor MP4 was usable after eight page refreshes."""

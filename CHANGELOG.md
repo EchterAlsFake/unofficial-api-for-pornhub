@@ -1,3 +1,21 @@
+# 6.0.0
+
+Release 6.0.0
+
+Update pagination handling, validation, and documentation.
+
+Changes since v5.4.8:
+
+```text
+README.md                     |  14 +
+ pornhub_api/__init__.py       |  22 +-
+ pornhub_api/api.py            | 593 +++++++++++++++++++++++++++++++++---------
+ pornhub_api/modules/consts.py |  72 ++---
+ pornhub_api/modules/errors.py |   4 +
+ pyproject.toml                |   4 +-
+ 6 files changed, 544 insertions(+), 165 deletions(-)
+```
+
 # Changelog
 
 ## 5.4.8 - 2026-11-14

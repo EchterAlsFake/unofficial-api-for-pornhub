@@ -160,11 +160,11 @@ def extractor_gifs(html_content: str, base_url: str = "https://www.pornhub.com")
         "div.gifsWrapper, ul.gifs, div.gifSearchListing"
     ) or parser
 
-    unique_urls = set()
+    unique_urls = {}
     for a_tag in container.css("a[href]"):
         href = a_tag.attributes.get("href")
         if isinstance(href, str) and href.startswith("/gif/") and any(c.isdigit() for c in href):
-            unique_urls.add(urljoin(base_url, href))
+            unique_urls.setdefault(urljoin(base_url, href), None)
 
     return [{"url": url} for url in unique_urls]
 
@@ -172,55 +172,63 @@ def extractor_gifs(html_content: str, base_url: str = "https://www.pornhub.com")
 def extractor_model_uploads(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     parser = LexborHTMLParser(html_content)
     container = parser.css_first("div.profileVids")
-    blocks = container.css("li.pcVideoListItem, li.videoBox") if container else []
-    if not blocks:
-        blocks = parser.css("li.pcVideoListItem, li.videoBox")
+    if container is None:
+        raise ValueError("The response did not expose the profile uploads section")
+    blocks = container.css("li.pcVideoListItem, li.videoBox")
     return _extract_video_blocks(blocks, base_url)
 
 
 def extractor_model_videos(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     parser = LexborHTMLParser(html_content)
-    container = parser.css_first("#mostRecentVideosSection")
-    blocks = container.css("li.pcVideoListItem, li.videoBox") if container else []
-    if not blocks:
-        blocks = parser.css("li.pcVideoListItem, li.videoBox")
+    container = parser.css_first("#mostRecentVideosSection") or parser.css_first("div.profileVids")
+    if container is None:
+        raise ValueError("The response did not expose the profile videos section")
+    blocks = container.css("li.pcVideoListItem, li.videoBox")
     return _extract_video_blocks(blocks, base_url)
 
 
 def extractor_hubtraffic(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     import json
-    try:
-        data = json.loads(html_content)
-        videos = data.get("videos", [])
-        results = []
-        for v in videos:
-            if isinstance(v, dict) and v.get("url"):
-                results.append({
-                    "url": v["url"],
-                    "video_id": v.get("video_id"),
-                    "title": v.get("title") or "",
-                    "duration": v.get("duration"),
-                    "thumbnail": v.get("default_thumb") or v.get("thumb"),
-                    "views": str(v.get("views", "0")),
-                    "publish_date": v.get("publish_date"),
-                })
-        return results
-    except Exception:
-        logger.warning("Failed to parse HubTraffic search JSON", exc_info=True)
-        return []
+    data = json.loads(html_content)
+    if not isinstance(data, dict) or not isinstance(data.get("videos"), list):
+        raise ValueError("Invalid HubTraffic listing")
+    results = []
+    for video in data["videos"]:
+        if not isinstance(video, dict) or not video.get("url"):
+            raise ValueError("HubTraffic listing omitted a video URL")
+        results.append({
+            "url": video["url"],
+            "video_id": video.get("video_id"),
+            "title": video.get("title") or "",
+            "duration": video.get("duration"),
+            "thumbnail": video.get("default_thumb") or video.get("thumb"),
+            "views": str(video.get("views", "0")),
+            "publish_date": video.get("publish_date"),
+        })
+    return results
 
 
 def extractor_videos(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     results = []
     parser = LexborHTMLParser(html_content)
-    video_blocks = parser.css(
+    # Header carousels, feed sidebars and bottom recommendations are not rows
+    # in the requested collection. Their presence must not hide an empty feed.
+    for unrelated in parser.css("#hottestMenuSection, .feedRight, #bottomVideos"):
+        unrelated.decompose()
+    region = (
+        parser.css_first(
+            "#videoSearchResult, #moreData, .feedContent, #recommendations"
+        )
+        or parser
+    )
+    video_blocks = region.css(
         "li.pcVideoListItem, li.videoBox, li > div.pcVideoListItem, li > div.videoBox, "
         "div.pcVideoListItem, div.videoBox"
     )
 
     if not video_blocks:
         seen = set()
-        for a_tag in parser.css('a[href*="view_video.php?viewkey="], a[href*="viewkey="]'):
+        for a_tag in region.css('a[href*="view_video.php?viewkey="], a[href*="viewkey="]'):
             href = a_tag.attributes.get("href")
             if isinstance(href, str) and href:
                 url = urljoin(base_url, href)
@@ -273,9 +281,9 @@ def extractor_playlist(html_content: str, base_url: str = "https://www.pornhub.c
 
 def extractor_users(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, str]]:
     parser = LexborHTMLParser(html_content)
-    urls = {
+    urls = dict.fromkeys(
         urljoin(base_url, href)
         for a_tag in parser.css("a.userLink[href]")
         if (href := a_tag.attributes.get("href")) and isinstance(href, str) and href.startswith("/")
-    }
+    )
     return [{"url": url} for url in urls]

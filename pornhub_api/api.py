@@ -16,6 +16,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from __future__ import annotations
 
+from base_api import paginated_stream, PageInfo, validate_pagination, ResultOrder
+from base_api.modules.pagination import linked_page
+from base_api.modules.errors import HTTPStatusError
+
 import copy
 import html
 import json
@@ -642,43 +646,89 @@ class UserHelper(BaseMedia):
             "star_sign": _get_info("Star Sign"),
         }
 
-    def get_videos(
-        self,
-        pages: int = 5,
-        iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        base_url = profile_base_url(self.resolved_url or self.url)
-        page_urls = [update_url_query(append_url_path(base_url, "videos"), page=page) for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=partial(extractor_model_videos, base_url=base_url), iterator_config=iterator_config,
+    async def get_videos(
+        self, pages: int | str = 1, iterator_config=None, *, start_page=1
+    ):
+        validate_pagination(pages, start_page)
+        # Resolve profile aliases before building tab routes: /model can redirect
+        # to /pornstar, and the old alias's tab can drop pagination altogether.
+        await get_html_content(core=self.core, url=self.url, owner=self)
+        base = profile_base_url(self.resolved_url or self.url)
+        tab = "videos"
+        page_url = lambda page: update_url_query(append_url_path(base, tab), page=page)
+        stream = paginated_stream(
+            core=self.core,
+            constructor=Video,
+            page_url=page_url,
+            item_extractor=partial(extractor_model_videos, base_url=base),
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            pages=pages,
+            start_page=start_page,
+            iterator_config=iterator_config,
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
+        async with stream:
+            async for result in stream:
+                yield result
 
-    def get_uploads(
-        self,
-        pages: int = 5,
-        iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        base_url = profile_base_url(self.resolved_url or self.url)
-        subpath = "videos/public" if "/users/" in base_url else "videos/upload"
-        page_urls = [update_url_query(append_url_path(base_url, subpath), page=page) for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=partial(extractor_model_uploads, base_url=base_url), iterator_config=iterator_config,
+    async def get_uploads(
+        self, pages: int | str = 1, iterator_config=None, *, start_page=1
+    ):
+        validate_pagination(pages, start_page)
+        # Resolve profile aliases before building tab routes: /model can redirect
+        # to /pornstar, and the old alias's tab can drop pagination altogether.
+        await get_html_content(core=self.core, url=self.url, owner=self)
+        base = profile_base_url(self.resolved_url or self.url)
+        tab = "videos/public" if "/users/" in base else "videos/upload"
+        page_url = lambda page: update_url_query(append_url_path(base, tab), page=page)
+        stream = paginated_stream(
+            core=self.core,
+            constructor=Video,
+            page_url=page_url,
+            item_extractor=partial(extractor_model_uploads, base_url=base),
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            pages=pages,
+            start_page=start_page,
+            iterator_config=iterator_config,
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
+        async with stream:
+            async for result in stream:
+                yield result
 
-    def get_gifs(
-        self,
-        pages: int = 5,
-        iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult[GIF], None]:
-        base_url = profile_base_url(self.resolved_url or self.url)
-        subpath = "gifs" if "/users/" in base_url else "gifs/video"
-        page_urls = [update_url_query(append_url_path(base_url, subpath), page=page) for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=GIF, target_page_urls=page_urls,
-            item_extractor=partial(extractor_gifs, base_url=base_url), iterator_config=iterator_config,
+    async def get_gifs(
+        self, pages: int | str = 1, iterator_config=None, *, start_page=1
+    ):
+        validate_pagination(pages, start_page)
+        # Resolve profile aliases before building tab routes: /model can redirect
+        # to /pornstar, and the old alias's tab can drop pagination altogether.
+        await get_html_content(core=self.core, url=self.url, owner=self)
+        base = profile_base_url(self.resolved_url or self.url)
+        tab = "gifs" if "/users/" in base else "gifs/video"
+        page_url = lambda page: update_url_query(append_url_path(base, tab), page=page)
+        stream = paginated_stream(
+            core=self.core,
+            constructor=GIF,
+            page_url=page_url,
+            item_extractor=partial(extractor_gifs, base_url=base),
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            pages=pages,
+            start_page=start_page,
+            iterator_config=iterator_config,
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
+        async with stream:
+            async for result in stream:
+                yield result
 
 
 @dataclass(kw_only=True, slots=True)
@@ -1089,14 +1139,30 @@ class Album(BaseMedia):
             })
         return photos
 
-    async def get_photos(self, pages: int = 1) -> AsyncGenerator[dict[str, Any], None]:
-        logger.info(f"Fetching photos for Album at {self.url} (pages: {pages})")
-        base_url = self.resolved_url or self.url
-        page_urls = [update_url_query(base_url, page=page) for page in range(1, pages + 1)]
-        html_contents = await asyncio.gather(*(get_html_content(core=self.core, url=url, owner=self) for url in page_urls))
-        for html in html_contents:
-            for photo_data in self._parse_photos(html):
-                yield photo_data
+    async def get_photos(self, pages: int | str = 1, *, start_page=1):
+        validate_pagination(pages, start_page)
+        page_url = lambda page: update_url_query(
+            self.resolved_url or self.url, page=page
+        )
+        stream = paginated_stream(
+            core=self.core,
+            constructor=_PhotoEntry,
+            page_url=page_url,
+            item_extractor=lambda content: (
+                {"url": row["url"], "data": row} for row in self._parse_photos(content)
+            ),
+            page_info=lambda content, page, rows: linked_page(
+                content, page, rows, page_url=page_url
+            ),
+            pages=pages,
+            start_page=start_page,
+            iterator_config=IteratorConfig(order=ResultOrder.ORIGINAL),
+            verify_first=True,
+            terminal_error=_pagination_end,
+        )
+        async with stream:
+            async for result in stream:
+                yield result.unwrap().data
 
     async def download_photo(self, url: str, path: str) -> bool:
         if os.path.isdir(path):
@@ -2135,17 +2201,33 @@ class Channel(BaseMedia):
             "pornstars": pornstars,
         }
 
-    def get_videos(
-        self,
-        pages: int = 5,
-        iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        base_url = profile_base_url(self.resolved_url or self.url)
-        page_urls = [update_url_query(append_url_path(base_url, "videos"), page=page) for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=partial(extractor_videos, base_url=base_url), iterator_config=iterator_config,
+    async def get_videos(
+        self, pages: int | str = 1, iterator_config=None, *, start_page=1
+    ):
+        validate_pagination(pages, start_page)
+        # Resolve profile aliases before building tab routes: /model can redirect
+        # to /pornstar, and the old alias's tab can drop pagination altogether.
+        await get_html_content(core=self.core, url=self.url, owner=self)
+        base = profile_base_url(self.resolved_url or self.url)
+        tab = "videos"
+        page_url = lambda page: update_url_query(append_url_path(base, tab), page=page)
+        stream = paginated_stream(
+            core=self.core,
+            constructor=Video,
+            page_url=page_url,
+            item_extractor=partial(extractor_videos, base_url=base),
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            pages=pages,
+            start_page=start_page,
+            iterator_config=iterator_config,
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
+        async with stream:
+            async for result in stream:
+                yield result
 
     async def get_user(self, load_html: bool = True) -> User | None:
         user_link = await self.get_field("user_link")
@@ -2511,25 +2593,38 @@ class Playlist(BaseMedia):
 
     async def get_videos(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
+        validate_pagination(pages, start_page)
         await self.load_fields("playlist_id", "token")
         if not self.playlist_id or not self.token:
-            logger.warning(
-                f"Cannot fetch videos for Playlist at {self.url}: missing playlist_id ({self.playlist_id}) or token ({self.token})"
-            )
-            return
-        base_url = replace_url_path(self.resolved_url or self.url, "/playlist/viewChunked")
-        page_urls = [
-            update_url_query(base_url, id=self.playlist_id, token=self.token, page=page)
-            for page in range(1, pages + 1)
-        ]
-        async for result in _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=partial(extractor_playlist, base_url=base_url), iterator_config=iterator_config,
-        ):
-            yield result
+            raise ValueError("The response did not expose a playable playlist listing")
+        base_url = replace_url_path(
+            self.resolved_url or self.url, "/playlist/viewChunked"
+        )
+        page_url = lambda page: update_url_query(
+            base_url, id=self.playlist_id, token=self.token, page=page
+        )
+        stream = paginated_stream(
+            core=self.core,
+            constructor=Video,
+            item_extractor=partial(extractor_playlist, base_url=base_url),
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
+        )
+        async with stream:
+            async for result in stream:
+                yield result
 
     async def get_author(self, load_html: bool = True) -> User | Pornstar | Channel | Model | None:
         author_link = await self.get_field("author_link")
@@ -3018,8 +3113,55 @@ class Video(BaseMedia):
     async def author(self) -> Pornstar | Channel | Model | User | None:
         return await self.get_author(load_html=True)
 
-    async def download(self, configuration: DownloadConfigHLS) -> bool | DownloadReport:
-        return await _download_hls(self, configuration)
+    async def download(
+        self,
+        configuration: DownloadConfigHLS | DownloadConfigRAW,
+        backup_configuration: DownloadConfigRAW | None = None,
+        *,
+        on_raw=None,
+    ) -> bool | DownloadReport:
+        """Download HLS with four page refreshes, then fall back to MP4.
+
+        Recovery stops after eight total page refreshes. Pass DownloadConfigRAW
+        to request MP4 directly, or backup_configuration to customize fallback
+        workers, callbacks and resume storage. on_raw is called before MP4 starts.
+        """
+        from pornhub_api.modules.download import download
+
+        await self.load_fields("title")
+        title = self.title or f"video_{self.video_id}"
+        prepared = prepare_download_config(configuration, strip_title(title))
+        if isinstance(prepared, DownloadConfigRAW):
+            hls = DownloadConfigHLS(
+                quality=prepared.quality,
+                path=prepared.path,
+                no_title=True,
+                stop_event=prepared.stop_event,
+            )
+            return await download(self, hls, prepared, on_raw=on_raw, raw_only=True)
+        if backup_configuration is None:
+            settings = self.core.configuration
+            backup_configuration = DownloadConfigRAW(
+                quality=prepared.quality,
+                path=prepared.path,
+                callback=prepared.callback,
+                no_title=True,
+                stop_event=prepared.stop_event,
+                metadata=prepared.metadata,
+                thumbnail=prepared.thumbnail,
+                max_workers=settings.max_workers_download,
+                read_timeout=float(settings.timeout),
+                max_retries=settings.request_attempts,
+            )
+        else:
+            backup_configuration = prepare_download_config(
+                backup_configuration, strip_title(title)
+            )
+            # Both modes write the same target and honor the same quality/stop.
+            backup_configuration.path = prepared.path
+            backup_configuration.quality = prepared.quality
+            backup_configuration.stop_event = prepared.stop_event
+        return await download(self, prepared, backup_configuration, on_raw=on_raw)
 
 
 class Account:
@@ -3042,43 +3184,78 @@ class Account:
 
     def get_recommended(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        return self.client.get_recommended(pages=pages, iterator_config=iterator_config)
+        validate_pagination(pages, start_page)
+        return self.client.get_recommended(
+            pages=pages, iterator_config=iterator_config, start_page=start_page
+        )
 
     def get_history(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        return self.client.get_history(pages=pages, iterator_config=iterator_config)
+        validate_pagination(pages, start_page)
+        return self.client.get_history(
+            pages=pages, iterator_config=iterator_config, start_page=start_page
+        )
 
     def get_favorites(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        return self.client.get_favorites(pages=pages, iterator_config=iterator_config)
+        validate_pagination(pages, start_page)
+        return self.client.get_favorites(
+            pages=pages, iterator_config=iterator_config, start_page=start_page
+        )
 
     def get_feed(
         self,
         section: str = "videos",
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        return self.client.get_feed(section=section, pages=pages, iterator_config=iterator_config)
+        validate_pagination(pages, start_page)
+        return self.client.get_feed(
+            section=section,
+            pages=pages,
+            iterator_config=iterator_config,
+            start_page=start_page,
+        )
 
     def get_subscriptions(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[User], None]:
-        return self.client.get_subscriptions(pages=pages, iterator_config=iterator_config)
+        validate_pagination(pages, start_page)
+        return self.client.get_subscriptions(
+            pages=pages, iterator_config=iterator_config, start_page=start_page
+        )
 
     def __repr__(self) -> str:
         status = 'logged-out' if self.name is None else f'name={self.name}'
         return f'Account({status})'
+
+
+@dataclass(kw_only=True)
+class _PhotoEntry(BaseMedia):
+    url: str
+    core: BaseCore
+    data: dict
 
 
 class Client:
@@ -3166,68 +3343,140 @@ class Client:
 
     async def get_recommended(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        await self.fix_recommendations()
-        page_urls = [f"{HOST}recommended?page={page}" for page in range(1, pages + 1)]
-        async for result in _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
-        ):
-            yield result
+        validate_pagination(pages, start_page)
+        page_url = lambda page: f"{HOST}recommended?page={page}"
+        stream = paginated_stream(
+            core=self.core,
+            constructor=Video,
+            item_extractor=extractor_videos,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
+        )
+        async with stream:
+            async for result in stream:
+                yield result
 
     def get_history(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
+        validate_pagination(pages, start_page)
         if not self.logged:
             raise LoginFailed("Must be logged in to access history")
-        page_urls = [f"{HOST}users/{self.account.name}/videos/recent?page={page}" for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
+        page_url = lambda page: (
+            f"{HOST}users/{self.account.name}/videos/recent?page={page}"
+        )
+        return paginated_stream(
+            core=self.core,
+            constructor=Video,
+            item_extractor=extractor_videos,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
 
     def get_favorites(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
+        validate_pagination(pages, start_page)
         if not self.logged:
             raise LoginFailed("Must be logged in to access favorites")
-        page_urls = [f"{HOST}users/{self.account.name}/videos/favorites?page={page}" for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
+        page_url = lambda page: (
+            f"{HOST}users/{self.account.name}/videos/favorites?page={page}"
+        )
+        return paginated_stream(
+            core=self.core,
+            constructor=Video,
+            item_extractor=extractor_videos,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
 
     def get_feed(
         self,
         section: str = "videos",
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
+        validate_pagination(pages, start_page)
         if not self.logged:
             raise LoginFailed("Must be logged in to access feed")
-        page_urls = [f"{HOST}feeds?section={section}&page={page}" for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
+        page_url = lambda page: f"{HOST}feeds?section={section}&page={page}"
+        return paginated_stream(
+            core=self.core,
+            constructor=Video,
+            item_extractor=extractor_videos,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
 
     def get_subscriptions(
         self,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[User], None]:
+        validate_pagination(pages, start_page)
         if not self.logged:
             raise LoginFailed("Must be logged in to access subscriptions")
-        page_urls = [f"{HOST}users/{self.account.name}/subscriptions?page={page}" for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=User, target_page_urls=page_urls,
-            item_extractor=extractor_users, iterator_config=iterator_config,
+        page_url = lambda page: (
+            f"{HOST}users/{self.account.name}/subscriptions?page={page}"
+        )
+        return paginated_stream(
+            core=self.core,
+            constructor=User,
+            item_extractor=extractor_users,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
 
     async def _get_media(self, cls: type[MediaT], url: str, load_html: bool = True) -> MediaT:
@@ -3292,16 +3541,31 @@ class Client:
         query: str,
         category: Literal["gay", "transgender"] | None = None,
         search_filter: Literal["mr", "mv", "tr"] | None = None,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[GIF], None]:
-        base_url = f"{HOST}{category + '/' if category else ''}gifs/search?search={query}"
+        validate_pagination(pages, start_page)
+        base_url = update_url_query(
+            f"{HOST}{(category + '/' if category else '')}gifs/search", search=query
+        )
         if search_filter:
             base_url += f"&o={search_filter}"
-        page_urls = [f"{base_url}&page={page}" for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=GIF, target_page_urls=page_urls,
-            item_extractor=extractor_gifs, iterator_config=iterator_config,
+        page_url = lambda page: f"{base_url}&page={page}"
+        return paginated_stream(
+            core=self.core,
+            constructor=GIF,
+            item_extractor=extractor_gifs,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
 
     def search_videos(
@@ -3311,10 +3575,13 @@ class Client:
         sort_by: Literal["mr", "mv", "tr"] | None = None,
         duration_min: Literal["10", "20", "30"] | None = None,
         duration_max: Literal["10", "20", "30"] | None = None,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        base_url = f"{HOST}video/search?search={query}"
+        validate_pagination(pages, start_page)
+        base_url = update_url_query(f"{HOST}video/search", search=query)
         if production_type:
             base_url += f"&p={production_type}"
         if sort_by:
@@ -3323,11 +3590,20 @@ class Client:
             base_url += f"&duration_min={duration_min}"
         if duration_max:
             base_url += f"&duration_max={duration_max}"
-
-        page_urls = [f"{base_url}&page={page}" for page in range(1, pages + 1)]
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_videos, iterator_config=iterator_config,
+        page_url = lambda page: f"{base_url}&page={page}"
+        return paginated_stream(
+            core=self.core,
+            constructor=Video,
+            item_extractor=extractor_videos,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
 
     def search_hubtraffic(
@@ -3336,24 +3612,37 @@ class Client:
         category: str | None = None,
         sort_by: Literal["newest", "mostviewed", "rating"] | None = None,
         period: Literal["weekly", "monthly", "alltime"] | None = None,
-        pages: int = 5,
+        pages: int | str = 1,
         iterator_config: IteratorConfig | None = None,
+        *,
+        start_page: int = 1,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        base_url = f"{HOST}webmasters/search?search={query}"
+        validate_pagination(pages, start_page)
+        base_url = update_url_query(f"{HOST}webmasters/search", search=query)
         if category:
             base_url += f"&category={category}"
         if sort_by:
             base_url += f"&ordering={sort_by}"
         if period:
             base_url += f"&period={period}"
-
-        page_urls = [f"{base_url}&page={page}" for page in range(1, pages + 1)]
+        page_url = lambda page: f"{base_url}&page={page}"
         if iterator_config is None:
-            iterator_config = make_iterator_config(max_item_concurrency=20, max_page_concurrency=5)
-
-        return _scrape_stream(
-            core=self.core, constructor=Video, target_page_urls=page_urls,
-            item_extractor=extractor_hubtraffic, iterator_config=iterator_config,
+            iterator_config = make_iterator_config(
+                max_item_concurrency=20, max_page_concurrency=5
+            )
+        return paginated_stream(
+            core=self.core,
+            constructor=Video,
+            item_extractor=extractor_hubtraffic,
+            iterator_config=iterator_config,
+            page_url=page_url,
+            pages=pages,
+            start_page=start_page,
+            page_info=lambda content, page, rows: _pagination_info(
+                content, page, rows, page_url=page_url
+            ),
+            verify_first=True,
+            terminal_error=_pagination_end,
         )
 
 
@@ -3438,6 +3727,51 @@ async def _cli_process_url(client: Client, url: str, args: argparse.Namespace, n
         print(f"Error processing {url}: {e}")
 
 
+def _pagination_end(error, page):
+    if page <= 1:
+        return False
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, HTTPStatusError):
+            return error.status_code == 404
+        error = error.__cause__ or error.__context__
+    return False
+
+
+def _pagination_info(content, page, rows, *, page_url):
+    parser = LexborHTMLParser(content)
+    more = parser.css_first("#moreDataBtn[onclick]")
+    if more is not None:
+        match = re.search(
+            r"loadMoreData\(\s*(['\"])(.*?)\1\s*,\s*['\"]?(\d+)",
+            more.attributes["onclick"],
+        )
+        if match and urlsplit(match[2]).path.startswith(
+            urlsplit(page_url(page)).path.rstrip("/")
+        ):
+            return PageInfo(
+                total_pages=max(1, int(match[3])),
+                current_page=page,
+                next_url=page_url(page + 1),
+            )
+    if "/playlist/viewChunked" in page_url(page):
+        # A chunk containing only unavailable cards can precede later videos.
+        return PageInfo(
+            terminal=not parser.css("li.pcVideoListItem, li.videoBox"),
+            next_url=page_url(page + 1),
+            next_is_probe=True,
+        )
+    if str(content).lstrip().startswith("{"):
+        data = json.loads(content)
+        if not isinstance(data.get("videos"), list):
+            raise ValueError("Invalid HubTraffic listing")
+        return PageInfo(
+            terminal=not data["videos"], next_url=page_url(page + 1), next_is_probe=True
+        )
+    return linked_page(content, page, rows, page_url=page_url)
+
+
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="PornHub API Command Line Interface")
     parser.add_argument("--download", metavar="URL (str)", type=str, help="URL to download from")
@@ -3512,3 +3846,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
