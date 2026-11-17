@@ -33,7 +33,7 @@ import argparse
 
 from pornhub_api.modules import errors as provider_errors
 from base_api import append_url_path, profile_base_url, replace_url_path, update_url_query
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from base_api.modules.provider import fetch_content, download_errors, prepare_download_config
 from base_api.modules.logger import configure_app_logging, get_logger, log_context
 
@@ -3769,6 +3769,20 @@ def _pagination_info(content, page, rows, *, page_url):
         return PageInfo(
             terminal=not data["videos"], next_url=page_url(page + 1), next_is_probe=True
         )
+    requested = urlsplit(page_url(page))
+    if requested.path.endswith("/videos/upload"):
+        # Some profiles alias uploads to their main videos tab. Their canonical
+        # and pagination links then omit /upload. Accept only the same profile's
+        # confirmed alias, preserving genuine upload tabs and request filters.
+        canonical = parser.css_first('link[rel="canonical"][href]')
+        if canonical is not None:
+            actual = urlsplit(urljoin(page_url(page), canonical.attributes["href"]))
+            if (actual.scheme, actual.netloc, actual.path.rstrip("/")) == (
+                requested.scheme, requested.netloc, requested.path.removesuffix("/upload")
+            ):
+                def canonical_page_url(number):
+                    return update_url_query(requested._replace(path=actual.path).geturl(), page=number)
+                return linked_page(content, page, rows, page_url=canonical_page_url)
     return linked_page(content, page, rows, page_url=page_url)
 
 

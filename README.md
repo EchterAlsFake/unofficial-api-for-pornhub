@@ -153,3 +153,9 @@ to enumerate listing identities without loading every detail page. Request and
 parser failures remain visible. Close partially consumed streams with `aclosing`
 (or `async with` for `ScrapeStream`). Source ordering can be selected explicitly
 through `IteratorConfig`. These changes require `eaf-base-api>=4.3.0`.
+
+Since 6.0.1, `get_uploads()` also follows profiles whose `/videos/upload` page
+canonically aliases `/videos`. The alias must refer to the same host/profile;
+profiles with separate upload tabs keep their own pagination. This fixes scans
+that previously stopped at 40 videos, including Porn Force. Run the live
+regression with `python -m pytest pornhub_api/tests/test_upload_pagination_live.py`.

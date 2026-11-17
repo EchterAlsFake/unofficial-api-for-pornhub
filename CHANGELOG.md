@@ -1,3 +1,11 @@
+# 6.0.1 - 2026-11-17
+
+- Fix `get_uploads(pages="all")` stopping after the first page when a profile
+  aliases `/videos/upload` to `/videos`. Follow the latter's pagination only
+  when its canonical link confirms the same profile; retain separate upload tabs.
+- Add live regression coverage for full listing order, page slicing and the
+  partial last page using Porn Force's public listing.
+
 # 6.0.0
 
 Release 6.0.0
