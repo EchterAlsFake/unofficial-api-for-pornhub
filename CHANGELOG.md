@@ -1,3 +1,7 @@
+# 6.0.2 - 2026-11-25
+
+- Remove preset cookies that asserted age or access status on new sessions.
+
 # 6.0.1 - 2026-11-17
 
 - Fix `get_uploads(pages="all")` stopping after the first page when a profile
