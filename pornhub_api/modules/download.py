@@ -95,6 +95,10 @@ async def download(video, hls: DownloadConfigHLS, raw: DownloadConfigRAW, *, on_
     _check_stop(hls)
     await video.load_fields("m3u8_base_url")
     core = video.core
+    validate_playback = getattr(core, "validate_playback", None)
+    if validate_playback is not None:
+        premium = video.is_premium if video.is_field_loaded("is_premium") else None
+        validate_playback(video.url, is_premium=premium)
     master = video.m3u8_base_url
     definitions = []
     last_error = None
@@ -107,6 +111,9 @@ async def download(video, hls: DownloadConfigHLS, raw: DownloadConfigRAW, *, on_
             logger.info("Refreshing PornHub download sources (%s/8)", refresh)
             page = await core.fetch_text(video.url, cache_policy=CachePolicy.BYPASS)
             _check_stop(hls)
+            if validate_playback is not None:
+                refreshed = await asyncio.to_thread(video._extract_html, page, video.url)
+                validate_playback(video.url, is_premium=refreshed.get("is_premium"))
             definitions = await asyncio.to_thread(_definitions, page)
             master = build_m3u8_master(definitions)
         if master and not resume_raw and not raw_only:

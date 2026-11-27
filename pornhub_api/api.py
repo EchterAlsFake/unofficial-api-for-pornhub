@@ -33,9 +33,10 @@ import argparse
 
 from pornhub_api.modules import errors as provider_errors
 from base_api import append_url_path, profile_base_url, replace_url_path, update_url_query
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 from base_api.modules.provider import fetch_content, download_errors, prepare_download_config
 from base_api.modules.logger import configure_app_logging, get_logger, log_context
+from base_api.modules.urls import same_site_url
 
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -76,6 +77,7 @@ from pornhub_api.modules.errors import (
     ClientAlreadyLogged,
 )
 from pornhub_api.modules.consts import (
+    extractor_channel_videos,
     extractor_model_videos,
     extractor_videos,
     extractor_hubtraffic,
@@ -179,6 +181,10 @@ def _is_hls_manifest_gone(error: BaseException) -> bool:
     return False
 
 
+def _premium_flag(value: object) -> bool:
+    return str(value).strip().casefold() in {"1", "true"}
+
+
 def _new_pornhub_session_client(core: BaseCore) -> tuple[BaseCore, Client]:
     """Create an isolated fresh client while retaining the caller's settings and cookies."""
     core.initialize_session()
@@ -190,7 +196,8 @@ def _new_pornhub_session_client(core: BaseCore) -> tuple[BaseCore, Client]:
     cookies.update(current_session.cookies.get_dict())
     configuration.cookies = cookies
 
-    fresh_core = BaseCore(configuration=configuration)
+    clone_for_retry = getattr(core, "clone_for_retry", None)
+    fresh_core = clone_for_retry(configuration) if clone_for_retry is not None else BaseCore(configuration=configuration)
     fresh_client = Client(core=fresh_core)
     assert fresh_core.session is not None
     fresh_core.session.headers.update(dict(current_session.headers))
@@ -216,6 +223,9 @@ async def _download_hls_with_fresh_session(
             html_content,
             media.url,
         )
+        validate_playback = getattr(fresh_core, "validate_playback", None)
+        if validate_playback is not None:
+            validate_playback(media.url, is_premium=extracted.get("is_premium"))
         fresh_master_url = extracted.get("m3u8_base_url")
         if not fresh_master_url:
             raise DownloadFailed(
@@ -1398,7 +1408,7 @@ class Short(BaseMedia):
         is_verified = badges.get("verified") if "verified" in badges else None
         if is_verified is None and target_slide:
             is_verified = bool(target_slide.css_first('span.verified-icon:not(.displayNone)'))
-        is_premium = badges.get("premium") if "premium" in badges else None
+        is_premium = _premium_flag(badges["premium"]) if "premium" in badges else None
         is_award = badges.get("award") if "award" in badges else None
 
         # Embed URL
@@ -1958,9 +1968,19 @@ class Channel(BaseMedia):
 
     loader_methods: ClassVar[dict[str, str]] = {"html": "_load_html"}
 
+    async def _fetch_profile(self) -> str:
+        url = update_url_query(profile_base_url(self.url), o=None)
+        content = await get_html_content(core=self.core, url=url, owner=self)
+        resolved = getattr(content, "url", None) or url
+        path = urlsplit(resolved).path.strip("/").split("/")
+        if not same_site_url(url, resolved) or len(path) < 2 or path[0] != "channels":
+            raise NotFound("The URL did not resolve to a channel profile", url=self.url)
+        self.resolved_url = resolved
+        return content
+
     async def _load_html(self) -> dict[str, object]:
         logger.debug(f"Fetching HTML for Channel at {self.url}")
-        html_content = await get_html_content(core=self.core, url=self.url, owner=self)
+        html_content = await self._fetch_profile()
         return await asyncio.to_thread(self._extract_html, html_content)
 
     def _extract_html(self, html_content: str | None = None) -> dict:
@@ -2205,17 +2225,19 @@ class Channel(BaseMedia):
         self, pages: int | str = 1, iterator_config=None, *, start_page=1
     ):
         validate_pagination(pages, start_page)
-        # Resolve profile aliases before building tab routes: /model can redirect
-        # to /pornstar, and the old alias's tab can drop pagination altogether.
-        await get_html_content(core=self.core, url=self.url, owner=self)
+        if self.resolved_url is None:
+            await self._fetch_profile()
         base = profile_base_url(self.resolved_url or self.url)
-        tab = "videos"
-        page_url = lambda page: update_url_query(append_url_path(base, tab), page=page)
+        order = parse_qs(urlsplit(self.url).query, keep_blank_values=True).get("o", [None])[-1]
+        # Channel listings use the default order when `o` is omitted.
+        # The `o=mr` spelling used by other tabs is rejected here.
+        listing = update_url_query(append_url_path(base, "videos"), o=None if order == "mr" else order)
+        page_url = lambda page: update_url_query(listing, page=page)
         stream = paginated_stream(
             core=self.core,
             constructor=Video,
             page_url=page_url,
-            item_extractor=partial(extractor_videos, base_url=base),
+            item_extractor=partial(extractor_channel_videos, base_url=base),
             page_info=lambda content, page, rows: _pagination_info(
                 content, page, rows, page_url=page_url
             ),
@@ -2878,7 +2900,7 @@ class Video(BaseMedia):
             if "video_unavailable_country" in flashvars
             else bool(schema_json.get("ineligibleRegion"))
         )
-        is_premium = bool(video_show.get("isPremium", 0)) or bool(ratings_widget.get("isPremium", False))
+        is_premium = _premium_flag(video_show.get("isPremium")) or _premium_flag(ratings_widget.get("isPremium"))
 
         # 7. Views
         views_el = parser.css_first(

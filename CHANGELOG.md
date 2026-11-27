@@ -1,3 +1,10 @@
+# 6.0.3 - 2026-11-27
+
+- Fix channel pagination for most-recent links, preserve supported sort modes and
+  language hosts, and read videos from the channel's own listing.
+- Preserve the caller's session routing and playback restrictions during download
+  retries, and check refreshed playback metadata before using replacement sources.
+
 # 6.0.2 - 2026-11-25
 
 - Remove preset cookies that asserted age or access status on new sessions.

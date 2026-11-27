@@ -183,6 +183,13 @@ def extractor_model_videos(html_content: str, base_url: str = "https://www.pornh
     return _extract_video_blocks(blocks, base_url)
 
 
+def extractor_channel_videos(html_content: str, base_url: str) -> list[dict[str, Any]]:
+    listing = LexborHTMLParser(html_content).css_first("#showAllChanelVideos")
+    if listing is None:
+        raise ValueError("The response did not expose the channel videos section")
+    return _extract_video_blocks(listing.css("li[data-video-vkey]"), base_url)
+
+
 def extractor_hubtraffic(html_content: str, base_url: str = "https://www.pornhub.com") -> list[dict[str, Any]]:
     import json
     data = json.loads(html_content)
